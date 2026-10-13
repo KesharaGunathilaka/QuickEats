@@ -1,0 +1,51 @@
+_format_version: "3.0"
+
+services:
+  - name: identity-service
+    url: http://identity:8081
+    routes:
+      - name: identity-auth
+        paths: ["/api/v1/auth"]
+        strip_path: false
+      - name: identity-admin
+        paths: ["/api/v1/admin/organisations"]
+        strip_path: false
+
+  - name: catalog-service
+    url: http://catalog:8082
+    routes:
+      - name: catalog-shops
+        paths: ["/api/v1/shops", "/api/v1/menu-items"]
+        strip_path: false
+
+  - name: order-service
+    url: http://order:8083
+    routes:
+      - name: order-routes
+        paths: ["/api/v1/orders"]
+        strip_path: false
+
+  - name: payment-service
+    url: http://payment:8084
+    routes:
+      - name: payment-routes
+        paths: ["/api/v1/payments", "/api/v1/wallet"]
+        strip_path: false
+
+  - name: notification-service
+    url: http://notification:8085
+    routes:
+      - name: notification-health
+        paths: ["/notification/health"]
+        strip_path: true
+
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 60
+      policy: local
+  - name: cors
+    config:
+      origins: ["*"]
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      headers: ["Authorization", "Content-Type", "X-Request-ID", "X-Idempotency-Key"]

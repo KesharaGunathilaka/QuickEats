@@ -1,0 +1,149 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: quickeats
+      POSTGRES_PASSWORD: quickeats
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init-databases.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickeats"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["-js", "-m", "8222"]
+
+  kong:
+    image: kong:3.6-alpine
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+    volumes:
+      - ./infra/kong/kong.yml:/etc/kong/kong.yml
+    depends_on:
+      - identity
+      - catalog
+      - order
+      - payment
+      - notification
+
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/identity_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: dev-secret-change-in-production
+      PORT: "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+  catalog:
+    build:
+      context: .
+      dockerfile: services/catalog/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/catalog_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: dev-secret-change-in-production
+      PORT: "8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  order:
+    build:
+      context: .
+      dockerfile: services/order/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/order_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: dev-secret-change-in-production
+      CATALOG_SERVICE_URL: http://catalog:8082
+      PAYMENT_SERVICE_URL: http://payment:8084
+      PORT: "8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  payment:
+    build:
+      context: .
+      dockerfile: services/payment/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/payment_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: dev-secret-change-in-production
+      PORT: "8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification:
+    build:
+      context: .
+      dockerfile: services/notification/Dockerfile
+    ports:
+      - "8085:8085"
+      - "8086:8086"
+    environment:
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: dev-secret-change-in-production
+      HTTP_PORT: "8085"
+      WS_PORT: "8086"
+      ORDER_SERVICE_URL: http://order:8083
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
