@@ -22,6 +22,12 @@ func (s *CardStrategy) Execute(ctx context.Context, payment *domain.Payment) (*d
 	// In production: generate a PayHere/Stripe checkout session URL
 	// For now: return a simulated redirect URL
 	sessionID := uuid.New().String()
+
+	// Local dev: no gateway credentials configured, so simulate an instant successful charge
+	if s.merchantID == "" {
+		return &domain.PaymentResult{GatewayRef: fmt.Sprintf("simulated:%s", sessionID), Completed: true}, nil
+	}
+
 	baseURL := "https://sandbox.payhere.lk"
 	if !s.sandbox {
 		baseURL = "https://www.payhere.lk"

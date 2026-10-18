@@ -17,9 +17,8 @@ func NewWalletStrategy(walletRepo port.WalletRepository) *WalletStrategy {
 }
 
 func (s *WalletStrategy) Execute(ctx context.Context, payment *domain.Payment) (*domain.PaymentResult, error) {
-	// Find wallet by extracting customer ID from context or payment metadata
-	// For simplicity, the order's customer owns the wallet
-	wallet, err := s.walletRepo.GetByUserID(ctx, "") // Customer ID should be passed via payment metadata
+	// The order's customer owns the wallet
+	wallet, err := s.walletRepo.GetByUserID(ctx, payment.CustomerID)
 	if err != nil || wallet == nil {
 		return nil, domain.ErrWalletNotFound
 	}

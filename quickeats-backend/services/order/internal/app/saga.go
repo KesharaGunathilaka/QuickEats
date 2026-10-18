@@ -24,6 +24,37 @@ func NewSagaOrchestrator(db *pgxpool.Pool, orderRepo port.OrderRepository, catal
 	return &SagaOrchestrator{db: db, orderRepo: orderRepo, catalogClient: catalogClient, paymentClient: paymentClient}
 }
 
+// HandleOrderPlaced starts the saga: reserve stock in catalog, then request payment.
+func (s *SagaOrchestrator) HandleOrderPlaced(ctx context.Context, event events.Event) error {
+	payload, _ := json.Marshal(event.Payload)
+	var data struct {
+		OrderID string `json:"order_id"`
+	}
+	json.Unmarshal(payload, &data)
+
+	order, err := s.orderRepo.GetByID(ctx, data.OrderID)
+	if err != nil || order == nil {
+		slog.Error("saga: order not found for order placed", "order_id", data.OrderID)
+		return nil
+	}
+	if order.Status != domain.StatusPendingPayment {
+		return nil // already progressed (redelivered event)
+	}
+
+	var items []port.ReserveStockItem
+	for _, item := range order.Items {
+		items = append(items, port.ReserveStockItem{MenuItemID: item.MenuItemID, Quantity: item.Quantity})
+	}
+	if _, err := s.catalogClient.ReserveStock(ctx, port.ReserveStockRequest{OrderID: order.ID, Items: items}); err != nil {
+		slog.Error("saga: stock reservation failed, compensating", "order_id", order.ID, "error", err)
+		s.compensateCancel(ctx, order, "stock_insufficient")
+		return nil
+	}
+
+	s.requestPayment(ctx, order)
+	return nil
+}
+
 // HandleStockReserved is called when catalog.stock.reserved event arrives.
 func (s *SagaOrchestrator) HandleStockReserved(ctx context.Context, event events.Event) error {
 	payload, _ := json.Marshal(event.Payload)
@@ -42,8 +73,12 @@ func (s *SagaOrchestrator) HandleStockReserved(ctx context.Context, event events
 		return nil
 	}
 
-	// Create payment intent
-	_, err = s.paymentClient.CreatePaymentIntent(ctx, port.CreatePaymentIntentRequest{
+	s.requestPayment(ctx, order)
+	return nil
+}
+
+func (s *SagaOrchestrator) requestPayment(ctx context.Context, order *domain.Order) {
+	_, err := s.paymentClient.CreatePaymentIntent(ctx, port.CreatePaymentIntentRequest{
 		OrderID:    order.ID,
 		CustomerID: order.CustomerID,
 		Amount:     order.TotalAmount,
@@ -53,11 +88,10 @@ func (s *SagaOrchestrator) HandleStockReserved(ctx context.Context, event events
 	if err != nil {
 		slog.Error("saga: payment intent failed, compensating", "order_id", order.ID, "error", err)
 		s.compensateCancel(ctx, order, "payment_failed")
-		return nil
+		return
 	}
 
 	slog.Info("saga: payment intent created", "order_id", order.ID)
-	return nil
 }
 
 // HandlePaymentCompleted is called when payment.payment.completed event arrives.

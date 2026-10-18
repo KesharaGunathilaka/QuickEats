@@ -10,21 +10,24 @@ import (
 )
 
 type AuthHandler struct {
-	registerUC *app.RegisterUseCase
-	loginUC    *app.LoginUseCase
-	tokenIssuer port.TokenIssuer
-	userRepo    port.UserRepository
+	registerUC     *app.RegisterUseCase
+	registerShopUC *app.RegisterShopUseCase
+	loginUC        *app.LoginUseCase
+	tokenIssuer    port.TokenIssuer
+	userRepo       port.UserRepository
 }
 
 func NewAuthHandler(
 	registerUC *app.RegisterUseCase,
+	registerShopUC *app.RegisterShopUseCase,
 	loginUC *app.LoginUseCase,
 	tokenIssuer port.TokenIssuer,
 	userRepo port.UserRepository,
 ) *AuthHandler {
 	return &AuthHandler{
-		registerUC:  registerUC,
-		loginUC:     loginUC,
+		registerUC:     registerUC,
+		registerShopUC: registerShopUC,
+		loginUC:        loginUC,
 		tokenIssuer: tokenIssuer,
 		userRepo:    userRepo,
 	}
@@ -50,20 +53,56 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		InviteCode:       req.InviteCode,
 	})
 	if err != nil {
-		switch err {
-		case domain.ErrUserAlreadyExists:
-			httputil.RespondError(w, httputil.ErrConflict(err.Error()))
-		case domain.ErrOrgNotFound:
-			httputil.RespondError(w, httputil.ErrNotFound("organisation"))
-		case domain.ErrVerificationFailed:
-			httputil.RespondError(w, httputil.ErrBusinessRule("VERIFICATION_FAILED", err.Error()))
-		default:
-			httputil.RespondError(w, err)
-		}
+		respondRegisterError(w, err)
 		return
 	}
 
 	httputil.RespondJSON(w, http.StatusCreated, user)
+}
+
+// RegisterShop signs up a shop owner together with their shop.
+func (h *AuthHandler) RegisterShop(w http.ResponseWriter, r *http.Request) {
+	var req RegisterShopRequest
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+
+	if req.Email == "" || req.Password == "" || req.DisplayName == "" || req.OrganisationSlug == "" || req.ShopName == "" {
+		httputil.RespondError(w, httputil.ErrValidation("email, password, displayName, organisationSlug, and shopName are required", nil))
+		return
+	}
+
+	user, err := h.registerShopUC.Execute(r.Context(), app.RegisterShopRequest{
+		RegisterRequest: app.RegisterRequest{
+			OrganisationSlug: req.OrganisationSlug,
+			Email:            req.Email,
+			Password:         req.Password,
+			DisplayName:      req.DisplayName,
+			InviteCode:       req.InviteCode,
+		},
+		ShopName:        req.ShopName,
+		ShopDescription: req.ShopDescription,
+	})
+	if err != nil {
+		respondRegisterError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusCreated, user)
+}
+
+func respondRegisterError(w http.ResponseWriter, err error) {
+	switch err {
+	case domain.ErrUserAlreadyExists:
+		httputil.RespondError(w, httputil.ErrConflict(err.Error()))
+	case domain.ErrOrgNotFound:
+		httputil.RespondError(w, httputil.ErrNotFound("organisation"))
+	case domain.ErrVerificationFailed:
+		httputil.RespondError(w, httputil.ErrBusinessRule("VERIFICATION_FAILED", "this email is not allowed for the organisation"))
+	default:
+		httputil.RespondError(w, err)
+	}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

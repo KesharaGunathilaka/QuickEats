@@ -24,7 +24,7 @@ func NewLoginUseCase(userRepo port.UserRepository, tokenIssuer port.TokenIssuer)
 
 func (uc *LoginUseCase) Execute(ctx context.Context, req LoginRequest) (*port.TokenPair, error) {
 	user, err := uc.userRepo.GetByEmail(ctx, req.Email)
-	if err != nil {
+	if err != nil || user == nil {
 		return nil, domain.ErrInvalidCredentials
 	}
 

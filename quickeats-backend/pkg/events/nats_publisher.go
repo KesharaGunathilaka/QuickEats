@@ -23,7 +23,14 @@ func NewNATSPublisher(url string) (*NATSPublisher, error) {
 		return nil, fmt.Errorf("jetstream: %w", err)
 	}
 
-	// Ensure streams exist
+	ensureStreams(js)
+
+	return &NATSPublisher{js: js, nc: nc}, nil
+}
+
+// ensureStreams creates the JetStream streams if missing. Both publishers and
+// consumers call it, so start-up order between services doesn't matter.
+func ensureStreams(js nats.JetStreamContext) {
 	for _, stream := range []struct {
 		Name     string
 		Subjects []string
@@ -41,8 +48,6 @@ func NewNATSPublisher(url string) (*NATSPublisher, error) {
 			// Stream may already exist, ignore
 		}
 	}
-
-	return &NATSPublisher{js: js, nc: nc}, nil
 }
 
 func (p *NATSPublisher) Publish(ctx context.Context, subject string, event Event) error {

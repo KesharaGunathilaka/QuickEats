@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 )
@@ -24,11 +25,15 @@ func NewNATSConsumer(url string) (*NATSConsumer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jetstream: %w", err)
 	}
+	ensureStreams(js)
 	return &NATSConsumer{js: js, nc: nc}, nil
 }
 
 func (c *NATSConsumer) Subscribe(subject string, group string, handler Handler) error {
-	sub, err := c.js.QueueSubscribe(subject, group, func(msg *nats.Msg) {
+	// A durable consumer is bound to one filter subject, so each subject needs its
+	// own durable name; reusing the group name would break every subject after the first.
+	name := group + "_" + strings.NewReplacer(".", "_", "*", "any", ">", "all").Replace(subject)
+	sub, err := c.js.QueueSubscribe(subject, name, func(msg *nats.Msg) {
 		var event Event
 		if err := json.Unmarshal(msg.Data, &event); err != nil {
 			slog.Error("failed to unmarshal event", "subject", subject, "error", err)
@@ -43,8 +48,9 @@ func (c *NATSConsumer) Subscribe(subject string, group string, handler Handler) 
 		}
 
 		msg.Ack()
-	}, nats.Durable(group), nats.ManualAck())
+	}, nats.Durable(name), nats.ManualAck())
 	if err != nil {
+		slog.Error("event subscription failed", "subject", subject, "error", err)
 		return fmt.Errorf("subscribe %s: %w", subject, err)
 	}
 	c.subs = append(c.subs, sub)

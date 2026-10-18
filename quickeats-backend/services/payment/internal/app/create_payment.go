@@ -45,6 +45,7 @@ func (uc *CreatePaymentUseCase) Execute(ctx context.Context, req CreateIntentReq
 	}
 
 	payment := domain.NewPayment(req.OrderID, req.Method, req.Amount, req.Currency)
+	payment.CustomerID = req.CustomerID
 
 	// Resolve strategy
 	strategy, ok := uc.strategies[req.Method]

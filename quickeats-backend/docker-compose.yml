@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: quickeats
       POSTGRES_PASSWORD: quickeats
@@ -32,8 +32,37 @@ services:
       - "8222:8222"
     command: ["-js", "-m", "8222"]
 
+  # One-shot: apply each service's migrations to its own database
+  migrate:
+    image: migrate/migrate:v4.17.1
+    volumes:
+      - ./services:/services:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for svc in identity catalog order payment; do
+          echo "migrating $$svc"
+          migrate -path /services/$$svc/migrations -database "postgres://quickeats:quickeats@postgres:5432/$${svc}_db?sslmode=disable" up
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: load dev data (idempotent)
+  seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: quickeats
+    volumes:
+      - ./infra/seed-dev.sql:/seed-dev.sql:ro
+    command: ["psql", "-h", "postgres", "-U", "quickeats", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/seed-dev.sql"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   kong:
-    image: kong:3.6-alpine
+    image: kong:3.6
     ports:
       - "8000:8000"
       - "8001:8001"
@@ -52,6 +81,7 @@ services:
       - notification
 
   identity:
+    restart: on-failure
     build:
       context: .
       dockerfile: services/identity/Dockerfile
@@ -62,8 +92,11 @@ services:
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
       JWT_SECRET: dev-secret-change-in-production
+      CATALOG_SERVICE_URL: http://catalog:8082
       PORT: "8081"
     depends_on:
+      seed:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -72,6 +105,7 @@ services:
         condition: service_started
 
   catalog:
+    restart: on-failure
     build:
       context: .
       dockerfile: services/catalog/Dockerfile
@@ -84,12 +118,15 @@ services:
       JWT_SECRET: dev-secret-change-in-production
       PORT: "8082"
     depends_on:
+      seed:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   order:
+    restart: on-failure
     build:
       context: .
       dockerfile: services/order/Dockerfile
@@ -104,12 +141,15 @@ services:
       PAYMENT_SERVICE_URL: http://payment:8084
       PORT: "8083"
     depends_on:
+      seed:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   payment:
+    restart: on-failure
     build:
       context: .
       dockerfile: services/payment/Dockerfile
@@ -122,12 +162,15 @@ services:
       JWT_SECRET: dev-secret-change-in-production
       PORT: "8084"
     depends_on:
+      seed:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
   notification:
+    restart: on-failure
     build:
       context: .
       dockerfile: services/notification/Dockerfile

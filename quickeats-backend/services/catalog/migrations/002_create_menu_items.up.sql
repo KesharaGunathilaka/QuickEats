@@ -22,4 +22,4 @@ CREATE TABLE stock_reservations (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_stock_res_order ON stock_reservations(order_id);
-CREATE INDEX idx_stock_res_expires ON stock_reservations(expires_at) WHERE expires_at > now();
+CREATE INDEX idx_stock_res_expires ON stock_reservations(expires_at);
