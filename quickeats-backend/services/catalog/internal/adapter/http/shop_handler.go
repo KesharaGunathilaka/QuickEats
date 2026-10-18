@@ -7,6 +7,7 @@ import (
 	"github.com/quickeats/pkg/httputil"
 	"github.com/quickeats/pkg/middleware"
 	"github.com/quickeats/services/catalog/internal/app"
+	"github.com/quickeats/services/catalog/internal/domain"
 	"github.com/quickeats/services/catalog/internal/port"
 )
 
@@ -123,8 +124,44 @@ func (h *CatalogHandler) CreateShop(w http.ResponseWriter, r *http.Request) {
 		httputil.RespondError(w, err)
 		return
 	}
-	shop := &app.CreateShopParams{Name: req.Name, Description: req.Description, OrgID: claims.OrganisationID, OwnerID: claims.UserID}
-	_ = shop
+	if req.Name == "" {
+		httputil.RespondError(w, httputil.ErrValidation("name is required", nil))
+		return
+	}
 	// Simplified: create directly via repo
 	// In production, this would go through a use case
+	shop := domain.NewShop(claims.OrganisationID, req.Name, req.Description, claims.UserID)
+	if err := h.shopRepo.Create(r.Context(), shop); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondJSON(w, http.StatusCreated, shop)
+}
+
+// CreateShopInternal is the service-to-service endpoint identity calls during shop sign-up.
+func (h *CatalogHandler) CreateShopInternal(w http.ResponseWriter, r *http.Request) {
+	var req InternalCreateShopRequest
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	if req.OrganisationID == "" || req.OwnerID == "" || req.Name == "" {
+		httputil.RespondError(w, httputil.ErrValidation("organisationId, ownerId and name are required", nil))
+		return
+	}
+	shop := domain.NewShop(req.OrganisationID, req.Name, req.Description, req.OwnerID)
+	shop.IsOpen = true // the shop app has no open/close toggle yet, so new shops start open
+	if err := h.shopRepo.Create(r.Context(), shop); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondJSON(w, http.StatusCreated, shop)
+}
+
+func (h *CatalogHandler) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
+	if err := h.menuUC.DeleteItem(r.Context(), chi.URLParam(r, "itemId")); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondNoContent(w)
 }

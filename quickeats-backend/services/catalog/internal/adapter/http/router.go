@@ -32,13 +32,17 @@ func NewRouter(handler *CatalogHandler, jwtSecret string) *chi.Mux {
 			r.Use(middleware.RequireRole("shop_staff", "shop_owner", "admin"))
 			r.Post("/shops/{id}/menu-items", handler.CreateMenuItem)
 			r.Patch("/menu-items/{itemId}/stock", handler.UpdateStock)
+			r.Delete("/menu-items/{itemId}", handler.DeleteMenuItem)
 		})
+
+		r.With(middleware.RequireRole("shop_owner", "admin")).Post("/shops", handler.CreateShop)
 	})
 
 	// Internal routes (service-to-service, no JWT)
 	r.Route("/internal", func(r chi.Router) {
 		r.Post("/stock/reserve", handler.ReserveStock)
 		r.Post("/stock/release", handler.ReleaseStock)
+		r.Post("/shops", handler.CreateShopInternal)
 	})
 
 	return r

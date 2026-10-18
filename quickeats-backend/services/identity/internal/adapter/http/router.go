@@ -24,6 +24,7 @@ func NewRouter(authHandler *AuthHandler, orgHandler *OrgHandler, jwtSecret strin
 	// Public auth routes
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
+		r.Post("/register-shop", authHandler.RegisterShop)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
 	})

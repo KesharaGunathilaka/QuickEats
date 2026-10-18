@@ -1,0 +1,57 @@
+name: quickeats_shop
+description: QuickEats Shop Staff App — manage orders, menus, and stock in real time.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State Management (MVVM)
+  provider: ^6.1.2
+  
+  # Dependency Injection
+  get_it: ^7.6.7
+
+  # Networking
+  dio: ^5.4.3+1
+  web_socket_channel: ^2.4.5
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # Storage
+  shared_preferences: ^2.2.3
+  flutter_secure_storage: ^9.0.0
+
+  # UI
+  google_fonts: ^6.2.1
+  shimmer: ^3.0.0
+  cached_network_image: ^3.3.1
+  flutter_svg: ^2.0.10+1
+  badges: ^3.1.2
+  intl: ^0.19.0
+  qr_flutter: ^4.1.0
+  fluttertoast: ^8.2.5
+
+  # Utils
+  json_annotation: ^4.8.1
+  equatable: ^2.0.5
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.9
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

@@ -21,6 +21,7 @@ type Payment struct {
 	Amount     int64         `json:"amount"`
 	Currency   string        `json:"currency"`
 	GatewayRef string        `json:"gatewayRef,omitempty"`
+	CustomerID string        `json:"-"` // set per request for strategies; not persisted
 	CreatedAt  time.Time     `json:"createdAt"`
 	UpdatedAt  time.Time     `json:"updatedAt"`
 }

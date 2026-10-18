@@ -14,6 +14,7 @@ import (
 	"github.com/quickeats/pkg/config"
 	"github.com/quickeats/services/identity/internal/adapter/jwt"
 	pgRepo "github.com/quickeats/services/identity/internal/adapter/postgres"
+	"github.com/quickeats/services/identity/internal/adapter/gateway"
 	httpAdapter "github.com/quickeats/services/identity/internal/adapter/http"
 	"github.com/quickeats/services/identity/internal/app"
 )
@@ -44,10 +45,11 @@ func main() {
 
 	// Use cases
 	registerUC := app.NewRegisterUseCase(userRepo, orgRepo)
+	registerShopUC := app.NewRegisterShopUseCase(userRepo, orgRepo, gateway.NewCatalogClient(cfg.CatalogServiceURL))
 	loginUC := app.NewLoginUseCase(userRepo, tokenIssuer)
 
 	// HTTP handlers
-	authHandler := httpAdapter.NewAuthHandler(registerUC, loginUC, tokenIssuer, userRepo)
+	authHandler := httpAdapter.NewAuthHandler(registerUC, registerShopUC, loginUC, tokenIssuer, userRepo)
 	orgHandler := httpAdapter.NewOrgHandler(orgRepo)
 
 	// Router

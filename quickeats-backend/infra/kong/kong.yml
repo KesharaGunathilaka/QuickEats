@@ -24,6 +24,12 @@ services:
       - name: order-routes
         paths: ["/api/v1/orders"]
         strip_path: false
+      # Shop order queue lives in the order service, but shares the /api/v1/shops
+      # prefix with catalog; the regex route takes precedence over the prefix one.
+      - name: order-shop-orders
+        paths: ["~/api/v1/shops/[^/]+/orders$"]
+        regex_priority: 10
+        strip_path: false
 
   - name: payment-service
     url: http://payment:8084

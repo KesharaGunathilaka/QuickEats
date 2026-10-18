@@ -55,6 +55,7 @@ func main() {
 	saga := app.NewSagaOrchestrator(pool, orderRepo, catalogClient, paymentClient)
 
 	// Subscribe to events
+	consumer.Subscribe("order.order.placed", "order-svc", saga.HandleOrderPlaced)
 	consumer.Subscribe("catalog.stock.reserved", "order-svc", saga.HandleStockReserved)
 	consumer.Subscribe("catalog.stock.insufficient", "order-svc", saga.HandleStockInsufficient)
 	consumer.Subscribe("payment.payment.completed", "order-svc", saga.HandlePaymentCompleted)

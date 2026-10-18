@@ -9,6 +9,7 @@ import (
 	"github.com/quickeats/pkg/httputil"
 	"github.com/quickeats/pkg/middleware"
 	"github.com/quickeats/services/payment/internal/app"
+	"github.com/quickeats/services/payment/internal/domain"
 	"github.com/quickeats/services/payment/internal/port"
 )
 
@@ -56,8 +57,8 @@ func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepo
 
 		r.Get("/wallet", func(w http.ResponseWriter, r *http.Request) {
 			claims := middleware.GetClaims(r.Context())
-			wallet, err := walletRepo.GetByUserID(r.Context(), claims.UserID)
-			if err != nil || wallet == nil {
+			wallet, err := getOrCreateWallet(r, walletRepo, claims.UserID)
+			if err != nil {
 				httputil.RespondError(w, httputil.ErrNotFound("wallet"))
 				return
 			}
@@ -67,7 +68,14 @@ func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepo
 		r.Post("/wallet/topup", func(w http.ResponseWriter, r *http.Request) {
 			claims := middleware.GetClaims(r.Context())
 			var req struct{ Amount int64 `json:"amount"` }
-			httputil.DecodeJSON(r, &req)
+			if err := httputil.DecodeJSON(r, &req); err != nil || req.Amount <= 0 {
+				httputil.RespondError(w, httputil.ErrValidation("amount must be a positive number of cents", nil))
+				return
+			}
+			if _, err := getOrCreateWallet(r, walletRepo, claims.UserID); err != nil {
+				httputil.RespondError(w, err)
+				return
+			}
 			walletRepo.Credit(r.Context(), claims.UserID, req.Amount)
 			httputil.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		})
@@ -79,4 +87,20 @@ func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepo
 	})
 
 	return r
+}
+
+// getOrCreateWallet lazily creates an empty wallet the first time a customer uses it.
+func getOrCreateWallet(r *http.Request, walletRepo port.WalletRepository, userID string) (*domain.Wallet, error) {
+	wallet, err := walletRepo.GetByUserID(r.Context(), userID)
+	if err != nil {
+		return nil, err
+	}
+	if wallet != nil {
+		return wallet, nil
+	}
+	wallet = domain.NewWallet(userID)
+	if err := walletRepo.Create(r.Context(), wallet); err != nil {
+		return nil, err
+	}
+	return wallet, nil
 }

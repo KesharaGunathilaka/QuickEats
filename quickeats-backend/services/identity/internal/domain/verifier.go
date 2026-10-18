@@ -12,19 +12,32 @@ type Verifier interface {
 
 type EmailDomainVerifier struct{}
 
+// Verify accepts config {"domain": "uni.lk"} or {"domains": ["uni.lk", "gmail.com"]}.
 func (v *EmailDomainVerifier) Verify(email string, config map[string]interface{}) error {
-	domain, ok := config["domain"].(string)
-	if !ok {
-		return fmt.Errorf("email_domain verifier requires 'domain' in config")
+	var allowed []string
+	if d, ok := config["domain"].(string); ok {
+		allowed = append(allowed, d)
+	}
+	if ds, ok := config["domains"].([]interface{}); ok {
+		for _, d := range ds {
+			if s, ok := d.(string); ok {
+				allowed = append(allowed, s)
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return fmt.Errorf("email_domain verifier requires 'domain' or 'domains' in config")
 	}
 	parts := strings.Split(email, "@")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid email format")
 	}
-	if !strings.EqualFold(parts[1], domain) {
-		return fmt.Errorf("email domain %s is not allowed for this organisation", parts[1])
+	for _, d := range allowed {
+		if strings.EqualFold(parts[1], d) {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("email domain %s is not allowed for this organisation", parts[1])
 }
 
 type InviteCodeVerifier struct{}

@@ -27,9 +27,24 @@ func NewRegisterUseCase(userRepo port.UserRepository, orgRepo port.OrganisationR
 }
 
 func (uc *RegisterUseCase) Execute(ctx context.Context, req RegisterRequest) (*domain.User, error) {
-	// 1. Find organisation
-	org, err := uc.orgRepo.GetBySlug(ctx, req.OrganisationSlug)
+	user, err := prepareUser(ctx, uc.userRepo, uc.orgRepo, req, domain.RoleCustomer)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := uc.userRepo.Create(ctx, user); err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+// prepareUser runs the checks shared by every sign-up flow (organisation exists,
+// email is eligible for it, email is unused) and builds the user with a hashed password.
+func prepareUser(ctx context.Context, userRepo port.UserRepository, orgRepo port.OrganisationRepository, req RegisterRequest, role domain.Role) (*domain.User, error) {
+	// 1. Find organisation
+	org, err := orgRepo.GetBySlug(ctx, req.OrganisationSlug)
+	if err != nil || org == nil {
 		return nil, domain.ErrOrgNotFound
 	}
 
@@ -60,7 +75,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, req RegisterRequest) (*d
 	}
 
 	// 3. Check uniqueness
-	exists, err := uc.userRepo.ExistsByEmail(ctx, req.Email)
+	exists, err := userRepo.ExistsByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -74,13 +89,7 @@ func (uc *RegisterUseCase) Execute(ctx context.Context, req RegisterRequest) (*d
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	// 5. Create user
-	user := domain.NewUser(org.ID, req.Email, string(hash), req.DisplayName, domain.RoleCustomer)
+	user := domain.NewUser(org.ID, req.Email, string(hash), req.DisplayName, role)
 	user.Verified = true // auto-verified after passing org verification
-
-	if err := uc.userRepo.Create(ctx, user); err != nil {
-		return nil, err
-	}
-
 	return user, nil
 }

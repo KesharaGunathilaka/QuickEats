@@ -8,6 +8,16 @@ type RegisterRequest struct {
 	InviteCode       string `json:"inviteCode,omitempty"`
 }
 
+type RegisterShopRequest struct {
+	OrganisationSlug string `json:"organisationSlug"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	DisplayName      string `json:"displayName"`
+	InviteCode       string `json:"inviteCode,omitempty"`
+	ShopName         string `json:"shopName"`
+	ShopDescription  string `json:"shopDescription"`
+}
+
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

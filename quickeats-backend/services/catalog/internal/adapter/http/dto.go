@@ -5,6 +5,14 @@ type CreateShopRequest struct {
 	Description string `json:"description"`
 }
 
+// InternalCreateShopRequest is sent by identity when a shop owner signs up.
+type InternalCreateShopRequest struct {
+	OrganisationID string `json:"organisationId"`
+	OwnerID        string `json:"ownerId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+}
+
 type CreateMenuItemRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

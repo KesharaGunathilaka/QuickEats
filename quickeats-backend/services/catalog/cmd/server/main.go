@@ -31,6 +31,7 @@ func main() {
 	rdb := redisLib.NewClient(&redisLib.Options{Addr: cfg.RedisURL})
 	defer rdb.Close()
 	slog.Info("connected to redis")
+	warmStockCache(context.Background(), pool, rdb)
 
 	shopRepo := pgRepo.NewShopRepo(pool)
 	menuRepo := pgRepo.NewMenuItemRepo(pool)
@@ -56,4 +57,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
+}
+
+// warmStockCache loads stock counts for items that have no Redis key yet
+// (e.g. seeded rows), so reservations don't treat them as out of stock.
+func warmStockCache(ctx context.Context, pool *pgxpool.Pool, rdb *redisLib.Client) {
+	rows, err := pool.Query(ctx, `SELECT id, stock FROM menu_items`)
+	if err != nil { slog.Error("stock cache warm-up failed", "error", err); return }
+	defer rows.Close()
+	warmed := 0
+	for rows.Next() {
+		var id string
+		var stock int
+		if err := rows.Scan(&id, &stock); err != nil { continue }
+		if ok, _ := rdb.SetNX(ctx, fmt.Sprintf("stock:%s", id), stock, 0).Result(); ok { warmed++ }
+	}
+	slog.Info("stock cache warmed", "items", warmed)
 }
