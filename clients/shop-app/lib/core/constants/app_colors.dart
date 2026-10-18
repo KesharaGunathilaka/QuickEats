@@ -14,6 +14,10 @@ class AppColors {
   static const textMuted = Color(0xFF94A3B8);
   static const white = Colors.white;
 
+  static const statusConfirmed = Color(0xFF3B82F6);
+  static const statusPreparing = Color(0xFFF97316);
+  static const statusReady = Color(0xFF22C55E);
+
   static Color forStatus(String status) {
     switch (status) {
       case 'PENDING_PAYMENT': return const Color(0xFFF59E0B);

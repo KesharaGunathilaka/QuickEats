@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:quickeats_customer/services/auth_service.dart';
 
@@ -20,7 +21,15 @@ class AuthViewModel extends ChangeNotifier {
   Future<bool> register(String orgSlug, String email, String password, String displayName) async {
     _isLoading = true; _error = null; notifyListeners();
     try { await _auth.register(orgSlug, email, password, displayName); _isLoading = false; notifyListeners(); return true;
-    } catch (e) { _isLoading = false; _error = 'Registration failed. Check your details.'; notifyListeners(); return false; }
+    } catch (e) { _isLoading = false; _error = _serverMessage(e) ?? 'Registration failed. Check your details.'; notifyListeners(); return false; }
+  }
+
+  // Backend errors look like {"error": {"code": ..., "message": ...}}
+  String? _serverMessage(Object e) {
+    if (e is! DioException) return null;
+    final data = e.response?.data;
+    if (data is Map && data['error'] is Map) return data['error']['message'] as String?;
+    return null;
   }
 
   Future<void> logout() async { await _auth.logout(); notifyListeners(); }

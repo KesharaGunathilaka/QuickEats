@@ -26,7 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const SizedBox(height: 4),
             const Text('Join your university food network', style: TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 32),
-            _field(_orgSlug, 'Organisation Code', Icons.school_outlined, hint: 'e.g., uor-eng'),
+            _field(_orgSlug, 'Organisation Code', Icons.school_outlined, hint: 'e.g., demo'),
             const SizedBox(height: 16),
             _field(_name, 'Full Name', Icons.person_outlined),
             const SizedBox(height: 16),

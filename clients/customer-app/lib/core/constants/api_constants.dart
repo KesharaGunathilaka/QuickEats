@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 class ApiConstants {
-  // Android emulator → host. Change to production URL when deployed.
-  static const String baseUrl = 'http://10.0.2.2:8000';
+  // Web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
+  // Change to production URL when deployed.
+  static const String baseUrl = kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000';
   // static const String baseUrl = 'https://api.quickeats.example.com';
 
   // Auth

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:quickeats_customer/core/constants/app_colors.dart';
+import 'package:quickeats_customer/viewmodels/auth_viewmodel.dart';
+import 'package:quickeats_customer/viewmodels/cart_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/shops_viewmodel.dart';
 
 class ShopListScreen extends StatefulWidget {
@@ -12,9 +14,22 @@ class ShopListScreen extends StatefulWidget {
 class _ShopListScreenState extends State<ShopListScreen> {
   @override void initState() { super.initState(); context.read<ShopsViewModel>().loadShops(); }
 
+  Future<void> _logout() async {
+    final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Log out?'),
+      actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Log out'))],
+    ));
+    if (ok != true || !mounted) return;
+    context.read<CartViewModel>().clear();
+    await context.read<AuthViewModel>().logout();
+    if (mounted) context.go('/login');
+  }
+
   @override Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Shops', style: TextStyle(fontWeight: FontWeight.w700)), backgroundColor: AppColors.white, foregroundColor: AppColors.textPrimary, elevation: 0),
+      appBar: AppBar(title: const Text('Shops', style: TextStyle(fontWeight: FontWeight.w700)), backgroundColor: AppColors.white, foregroundColor: AppColors.textPrimary, elevation: 0,
+        actions: [IconButton(icon: const Icon(Icons.logout), tooltip: 'Log out', onPressed: _logout)]),
       body: Consumer<ShopsViewModel>(builder: (_, vm, __) {
         if (vm.isLoading) return const Center(child: CircularProgressIndicator());
         if (vm.shops.isEmpty) return const Center(child: Text('No shops available'));

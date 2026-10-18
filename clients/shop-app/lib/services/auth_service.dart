@@ -55,6 +55,21 @@ class AuthService extends ChangeNotifier {
     return _currentUser!;
   }
 
+  /// Creates a shop-owner account together with its shop. Sign in afterwards.
+  Future<void> registerShop({
+    required String orgSlug, required String email, required String password,
+    required String displayName, required String shopName, String shopDescription = '',
+  }) async {
+    await _rawDio.post(ApiConstants.registerShop, data: {
+      'organisationSlug': orgSlug,
+      'email': email,
+      'password': password,
+      'displayName': displayName,
+      'shopName': shopName,
+      'shopDescription': shopDescription,
+    });
+  }
+
   Future<bool> refreshTokens() async {
     if (_refreshTokenStr == null) return false;
     try {

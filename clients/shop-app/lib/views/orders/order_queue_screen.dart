@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:quickeats_shop/core/constants/app_colors.dart';
 import 'package:quickeats_shop/core/constants/order_status.dart';
 import 'package:quickeats_shop/models/order.dart';
+import 'package:quickeats_shop/viewmodels/auth_viewmodel.dart';
 import 'package:quickeats_shop/viewmodels/order_queue_viewmodel.dart';
 import 'package:quickeats_shop/views/widgets/order_card.dart';
 
@@ -23,6 +24,23 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
     _vm.init();
   }
 
+  Future<void> _logout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('You will stop receiving live orders on this device.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Log out')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await context.read<AuthViewModel>().logout();
+    if (mounted) context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,6 +52,7 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
         elevation: 0,
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: () => _vm.loadOrders()),
+          IconButton(icon: const Icon(Icons.logout), tooltip: 'Log out', onPressed: _logout),
         ],
       ),
       body: Consumer<OrderQueueViewModel>(

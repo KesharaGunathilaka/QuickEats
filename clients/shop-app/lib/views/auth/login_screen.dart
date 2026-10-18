@@ -83,6 +83,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           : const Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () { vm.clearError(); context.go('/register'); },
+                      child: const Text('New here? Register your shop'),
+                    ),
                   ],
                 ),
               ),
