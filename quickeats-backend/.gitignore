@@ -1,0 +1,13 @@
+# Go build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Go workspace sums are machine-specific
+go.work.sum
+
+# Local env
+.env
