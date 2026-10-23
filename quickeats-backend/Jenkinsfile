@@ -1,6 +1,7 @@
-// QuickEats backend CI: vet/test every Go module, then build and push one
-// image per service to ECR. Runs on the EC2 box; ECR access comes from the
-// instance IAM role (no AWS keys stored anywhere).
+// QuickEats backend CI/CD.
+//   Checkout → Build & test → Docker build → Push to ECR → Deploy → Health check
+// If Deploy or Health check fails, the previous release is redeployed.
+// Runs on the EC2 box; ECR access comes from the instance IAM role (no AWS keys).
 pipeline {
     agent any
 
@@ -12,50 +13,125 @@ pipeline {
         ECR_REGISTRY = '256130491262.dkr.ecr.eu-north-1.amazonaws.com'
         SERVICES     = 'identity catalog order payment notification'
         CGO_ENABLED  = '0'
+        DEPLOY_DIR   = '/opt/quickeats'   // stable home of the running stack
     }
 
     options {
+        skipDefaultCheckout()
         timestamps()
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
     stages {
-        stage('Vet & test') {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.IMAGE_TAG = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Build & test') {
             steps {
                 dir('quickeats-backend') {
                     sh '''
                         set -e
                         for m in pkg $(for s in $SERVICES; do echo services/$s; done); do
                             echo "== $m"
-                            (cd "$m" && go vet ./... && go test ./...)
+                            (cd "$m" && go build ./... && go vet ./... && go test ./...)
                         done
                     '''
                 }
             }
         }
 
-        stage('Build & push images') {
+        stage('Docker build') {
             steps {
                 dir('quickeats-backend') {
                     sh '''
                         set -e
-                        TAG=$(git rev-parse --short=7 HEAD)
                         for s in $SERVICES; do
-                            img="$ECR_REGISTRY/quickeats-$s"
-                            echo "== $img:$TAG"
-                            docker build -f "services/$s/Dockerfile" -t "$img:$TAG" -t "$img:latest" .
-                            docker push "$img:$TAG"
-                            docker push "$img:latest"
+                            docker build -f "services/$s/Dockerfile" -t "$ECR_REGISTRY/quickeats-$s:$IMAGE_TAG" .
                         done
-                        echo "Pushed tag $TAG"
                     '''
                 }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                sh '''
+                    set -e
+                    for s in $SERVICES; do
+                        docker push "$ECR_REGISTRY/quickeats-$s:$IMAGE_TAG"
+                    done
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    env.PREV_TAG = sh(script: 'cat "$DEPLOY_DIR/.current_tag" 2>/dev/null || true', returnStdout: true).trim()
+                    env.DEPLOY_STARTED = 'true'
+                    echo "Deploying ${env.IMAGE_TAG} (previous: ${env.PREV_TAG ?: 'none'})"
+                }
+                dir('quickeats-backend') {
+                    withCredentials([file(credentialsId: 'quickeats-env-prod', variable: 'ENV_PROD')]) {
+                        sh '''
+                            set -e
+                            # Secrets: strip Windows line endings, readable by jenkins only
+                            tr -d '\\r' < "$ENV_PROD" > "$DEPLOY_DIR/.env.prod"
+                            chmod 600 "$DEPLOY_DIR/.env.prod"
+
+                            # Files the stack mounts at runtime
+                            cp docker-compose.prod.yml "$DEPLOY_DIR/"
+                            rm -rf "$DEPLOY_DIR/infra" && cp -r infra "$DEPLOY_DIR/"
+                            for s in identity catalog order payment; do
+                                mkdir -p "$DEPLOY_DIR/services/$s"
+                                rm -rf "$DEPLOY_DIR/services/$s/migrations"
+                                cp -r "services/$s/migrations" "$DEPLOY_DIR/services/$s/"
+                            done
+                        '''
+                    }
+                    sh 'bash deploy/deploy.sh "$IMAGE_TAG"'
+                }
+            }
+        }
+
+        stage('Health check') {
+            steps {
+                dir('quickeats-backend') {
+                    sh 'bash deploy/healthcheck.sh'
+                }
+                // Only a healthy release becomes the rollback target
+                sh 'echo "$IMAGE_TAG" > "$DEPLOY_DIR/.current_tag"'
             }
         }
     }
 
     post {
+        failure {
+            script {
+                if (env.DEPLOY_STARTED != 'true') {
+                    echo 'Failed before deploy; the running release was not touched.'
+                } else if (env.PREV_TAG) {
+                    echo "Rolling back to ${env.PREV_TAG}"
+                    dir('quickeats-backend') {
+                        sh 'bash deploy/deploy.sh "$PREV_TAG" && bash deploy/healthcheck.sh'
+                    }
+                    echo "Rolled back to ${env.PREV_TAG}; ${env.IMAGE_TAG} was not kept."
+                } else {
+                    echo 'First deploy failed and there is no previous release to roll back to.'
+                }
+            }
+        }
+        success {
+            echo "Release ${env.IMAGE_TAG} is live."
+        }
         always {
             // Keep the 30 GB disk from filling up with old build layers
             sh 'docker image prune -f'
