@@ -38,8 +38,10 @@ services:
         paths: ["/api/v1/payments", "/api/v1/wallet"]
         strip_path: false
 
+  # strip_path removes the whole "/notification/health" prefix, so the
+  # service URL carries the upstream path: /notification/health → /health
   - name: notification-service
-    url: http://notification:8085
+    url: http://notification:8085/health
     routes:
       - name: notification-health
         paths: ["/notification/health"]
