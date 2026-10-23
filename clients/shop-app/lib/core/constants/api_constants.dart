@@ -2,10 +2,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiConstants {
   // Web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
+  // Point at the deployed API without editing code:
+  //   flutter run --dart-define=API_BASE_URL=http://13.63.249.122
   static const String _host = kIsWeb ? 'localhost' : '10.0.2.2';
-  static const String baseUrl = 'http://$_host:8000';
-  // WebSocket goes through the Kong gateway like every other call.
-  static const String wsUrl = 'ws://$_host:8000/ws';
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://$_host:8000',
+  );
+  // WebSocket goes through the Kong gateway like every other call (http→ws, https→wss).
+  static final String wsUrl = '${baseUrl.replaceFirst('http', 'ws')}/ws';
 
   static const String login = '/api/v1/auth/login';
   static const String register = '/api/v1/auth/register';
