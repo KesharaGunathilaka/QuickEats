@@ -27,3 +27,7 @@ dist
 
 # Stray folder from a failed mkdir (path too long to read)
 {pkg*
+
+# Deploy scripts run on the host, not in images
+deploy
+Jenkinsfile
