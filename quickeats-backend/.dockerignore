@@ -1,0 +1,29 @@
+# Build context is quickeats-backend/; Dockerfiles only need pkg/ and services/.
+
+# Secrets
+.env
+.env.*
+
+# VCS, editors, OS
+.git
+.gitignore
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+
+# Not needed inside images
+infra
+docker-compose*.yml
+Makefile
+**/*.md
+**/*_test.go
+**/migrations
+
+# Build output
+bin
+dist
+**/*.exe
+
+# Stray folder from a failed mkdir (path too long to read)
+{pkg*

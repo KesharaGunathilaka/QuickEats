@@ -91,7 +91,7 @@ services:
       DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/identity_db?sslmode=disable
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       CATALOG_SERVICE_URL: http://catalog:8082
       PORT: "8081"
     depends_on:
@@ -115,7 +115,7 @@ services:
       DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/catalog_db?sslmode=disable
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       PORT: "8082"
     depends_on:
       seed:
@@ -136,7 +136,7 @@ services:
       DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/order_db?sslmode=disable
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       CATALOG_SERVICE_URL: http://catalog:8082
       PAYMENT_SERVICE_URL: http://payment:8084
       PORT: "8083"
@@ -159,7 +159,7 @@ services:
       DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/payment_db?sslmode=disable
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       PORT: "8084"
     depends_on:
       seed:
@@ -180,7 +180,7 @@ services:
     environment:
       REDIS_URL: redis:6379
       NATS_URL: nats://nats:4222
-      JWT_SECRET: dev-secret-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       HTTP_PORT: "8085"
       WS_PORT: "8086"
       ORDER_SERVICE_URL: http://order:8083

@@ -45,6 +45,15 @@ services:
         paths: ["/notification/health"]
         strip_path: true
 
+  # WebSocket for live shop notifications. Kong proxies the HTTP Upgrade,
+  # so clients connect to ws(s)://<host>:8000/ws and port 8086 stays private.
+  - name: notification-ws
+    url: http://notification:8086
+    routes:
+      - name: notification-ws
+        paths: ["/ws"]
+        strip_path: false
+
 plugins:
   - name: rate-limiting
     config:
