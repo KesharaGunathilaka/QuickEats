@@ -1,0 +1,64 @@
+// QuickEats backend CI: vet/test every Go module, then build and push one
+// image per service to ECR. Runs on the EC2 box; ECR access comes from the
+// instance IAM role (no AWS keys stored anywhere).
+pipeline {
+    agent any
+
+    tools {
+        go 'go-1.22'   // Manage Jenkins → Tools → Go installations
+    }
+
+    environment {
+        ECR_REGISTRY = '256130491262.dkr.ecr.eu-north-1.amazonaws.com'
+        SERVICES     = 'identity catalog order payment notification'
+        CGO_ENABLED  = '0'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    stages {
+        stage('Vet & test') {
+            steps {
+                dir('quickeats-backend') {
+                    sh '''
+                        set -e
+                        for m in pkg $(for s in $SERVICES; do echo services/$s; done); do
+                            echo "== $m"
+                            (cd "$m" && go vet ./... && go test ./...)
+                        done
+                    '''
+                }
+            }
+        }
+
+        stage('Build & push images') {
+            steps {
+                dir('quickeats-backend') {
+                    sh '''
+                        set -e
+                        TAG=$(git rev-parse --short=7 HEAD)
+                        for s in $SERVICES; do
+                            img="$ECR_REGISTRY/quickeats-$s"
+                            echo "== $img:$TAG"
+                            docker build -f "services/$s/Dockerfile" -t "$img:$TAG" -t "$img:latest" .
+                            docker push "$img:$TAG"
+                            docker push "$img:latest"
+                        done
+                        echo "Pushed tag $TAG"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Keep the 30 GB disk from filling up with old build layers
+            sh 'docker image prune -f'
+        }
+    }
+}

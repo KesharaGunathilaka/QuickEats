@@ -23,7 +23,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:              getEnv("PORT", "8080"),
-		DatabaseURL:       getEnv("DATABASE_URL", "postgres://quickeats:quickeats@localhost:5432/quickeats_db?sslmode=disable"),
+		DatabaseURL:       getEnv("DATABASE_URL", "postgres://quickeats:quickeats@localhost:5433/quickeats_db?sslmode=disable"),
 		RedisURL:          getEnv("REDIS_URL", "localhost:6379"),
 		NatsURL:           getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret:         getEnv("JWT_SECRET", "dev-secret-change-in-production"),

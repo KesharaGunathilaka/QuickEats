@@ -1,0 +1,160 @@
+# Production stack: pulls prebuilt images, publishes only Kong (host port 80).
+#
+#   cp .env.prod.example .env.prod      # then fill in real values
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Needs these repo files on the server: infra/ and services/*/migrations/.
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  depends_on:
+    seed:
+      condition: service_completed_successfully
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    nats:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quickeats
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/init-databases.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickeats"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js"]
+
+  # One-shot: apply each service's migrations to its own database
+  migrate:
+    image: migrate/migrate:v4.17.1
+    volumes:
+      - ./services:/services:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for svc in identity catalog order payment; do
+          echo "migrating $$svc"
+          migrate -path /services/$$svc/migrations -database "postgres://quickeats:${POSTGRES_PASSWORD}@postgres:5432/$${svc}_db?sslmode=disable" up
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: load demo data (idempotent)
+  seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./infra/seed-dev.sql:/seed-dev.sql:ro
+    command: ["psql", "-h", "postgres", "-U", "quickeats", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/seed-dev.sql"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # The only container reachable from outside. Admin API is disabled.
+  kong:
+    image: kong:3.6
+    restart: unless-stopped
+    ports:
+      - "80:8000"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "off"
+    volumes:
+      - ./infra/kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      - identity
+      - catalog
+      - order
+      - payment
+      - notification
+
+  identity:
+    <<: *service-defaults
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env.prod}/quickeats-identity:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgres://quickeats:${POSTGRES_PASSWORD}@postgres:5432/identity_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      CATALOG_SERVICE_URL: http://catalog:8082
+      PORT: "8081"
+
+  catalog:
+    <<: *service-defaults
+    image: ${IMAGE_PREFIX}/quickeats-catalog:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgres://quickeats:${POSTGRES_PASSWORD}@postgres:5432/catalog_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8082"
+
+  order:
+    <<: *service-defaults
+    image: ${IMAGE_PREFIX}/quickeats-order:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgres://quickeats:${POSTGRES_PASSWORD}@postgres:5432/order_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      CATALOG_SERVICE_URL: http://catalog:8082
+      PAYMENT_SERVICE_URL: http://payment:8084
+      PORT: "8083"
+
+  payment:
+    <<: *service-defaults
+    image: ${IMAGE_PREFIX}/quickeats-payment:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgres://quickeats:${POSTGRES_PASSWORD}@postgres:5432/payment_db?sslmode=disable
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-}
+      PORT: "8084"
+
+  notification:
+    restart: unless-stopped
+    image: ${IMAGE_PREFIX}/quickeats-notification:${IMAGE_TAG:-latest}
+    environment:
+      REDIS_URL: redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      HTTP_PORT: "8085"
+      WS_PORT: "8086"
+      ORDER_SERVICE_URL: http://order:8083
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+volumes:
+  pgdata:
