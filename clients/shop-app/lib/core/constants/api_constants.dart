@@ -4,7 +4,8 @@ class ApiConstants {
   // Web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
   static const String _host = kIsWeb ? 'localhost' : '10.0.2.2';
   static const String baseUrl = 'http://$_host:8000';
-  static const String wsUrl = 'ws://$_host:8086/ws';
+  // WebSocket goes through the Kong gateway like every other call.
+  static const String wsUrl = 'ws://$_host:8000/ws';
 
   static const String login = '/api/v1/auth/login';
   static const String register = '/api/v1/auth/register';
