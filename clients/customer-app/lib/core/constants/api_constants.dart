@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiConstants {
-  // Web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
-  // Change to production URL when deployed.
-  static const String baseUrl = kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000';
-  // static const String baseUrl = 'https://api.quickeats.example.com';
+  // Local dev default: web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
+  // Point at the deployed API without editing code:
+  //   flutter run --dart-define=API_BASE_URL=http://13.63.249.122
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
+  );
 
   // Auth
   static const String login = '/api/v1/auth/login';
