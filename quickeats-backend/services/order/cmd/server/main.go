@@ -33,13 +33,13 @@ func main() {
 	defer rdb.Close()
 
 	// Event publisher
-	publisher, err := events.NewNATSPublisher(cfg.NatsURL)
-	if err != nil { slog.Error("nats publisher failed", "error", err); os.Exit(1) }
+	publisher, err := events.NewKafkaPublisher(events.ParseBrokers(cfg.KafkaBrokers))
+	if err != nil { slog.Error("kafka publisher failed", "error", err); os.Exit(1) }
 	defer publisher.Close()
 
 	// Event consumer
-	consumer, err := events.NewNATSConsumer(cfg.NatsURL)
-	if err != nil { slog.Error("nats consumer failed", "error", err); os.Exit(1) }
+	consumer, err := events.NewKafkaConsumer(events.ParseBrokers(cfg.KafkaBrokers))
+	if err != nil { slog.Error("kafka consumer failed", "error", err); os.Exit(1) }
 	defer consumer.Close()
 
 	// Repos + clients

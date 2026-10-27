@@ -9,7 +9,7 @@ type Config struct {
 	Port              string
 	DatabaseURL       string
 	RedisURL          string
-	NatsURL           string
+	KafkaBrokers      string
 	JWTSecret         string
 	JWTExpiry         time.Duration
 	JWTRefreshExpiry  time.Duration
@@ -25,7 +25,7 @@ func Load() *Config {
 		Port:              getEnv("PORT", "8080"),
 		DatabaseURL:       getEnv("DATABASE_URL", "postgres://quickeats:quickeats@localhost:5433/quickeats_db?sslmode=disable"),
 		RedisURL:          getEnv("REDIS_URL", "localhost:6379"),
-		NatsURL:           getEnv("NATS_URL", "nats://localhost:4222"),
+		KafkaBrokers:      getEnv("KAFKA_BROKERS", "localhost:9092"),
 		JWTSecret:         getEnv("JWT_SECRET", "dev-secret-change-in-production"),
 		JWTExpiry:         parseDuration(getEnv("JWT_EXPIRY", "15m")),
 		JWTRefreshExpiry:  parseDuration(getEnv("JWT_REFRESH_EXPIRY", "168h")),

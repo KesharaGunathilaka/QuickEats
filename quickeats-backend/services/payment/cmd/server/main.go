@@ -29,8 +29,8 @@ func main() {
 	defer pool.Close()
 	pool.Ping(context.Background())
 
-	publisher, err := events.NewNATSPublisher(cfg.NatsURL)
-	if err != nil { slog.Error("nats failed", "error", err); os.Exit(1) }
+	publisher, err := events.NewKafkaPublisher(events.ParseBrokers(cfg.KafkaBrokers))
+	if err != nil { slog.Error("kafka failed", "error", err); os.Exit(1) }
 	defer publisher.Close()
 
 	paymentRepo := pgRepo.NewPaymentRepo(pool)
