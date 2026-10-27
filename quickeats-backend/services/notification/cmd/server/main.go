@@ -23,8 +23,8 @@ func main() {
 	notifService := app.NewNotificationService(hub)
 
 	// Event consumer
-	consumer, err := events.NewNATSConsumer(cfg.NatsURL)
-	if err != nil { slog.Error("nats failed", "error", err); os.Exit(1) }
+	consumer, err := events.NewKafkaConsumer(events.ParseBrokers(cfg.KafkaBrokers))
+	if err != nil { slog.Error("kafka failed", "error", err); os.Exit(1) }
 	defer consumer.Close()
 
 	consumer.Subscribe("order.order.confirmed", "notification-svc", notifService.HandleOrderConfirmed)
