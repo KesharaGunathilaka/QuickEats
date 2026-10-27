@@ -2,12 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:quickeats_customer/core/constants/app_colors.dart';
+import 'package:quickeats_customer/core/di/service_locator.dart';
+import 'package:quickeats_customer/services/order_notification_service.dart';
 import 'package:quickeats_customer/viewmodels/cart_viewmodel.dart';
 import 'package:badges/badges.dart' as badges;
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends StatefulWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
+
+  @override
+  State<ShellScreen> createState() => _ShellScreenState();
+}
+
+class _ShellScreenState extends State<ShellScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // First screen after login: ask once for permission to show order notifications (Android 13+).
+    getIt<OrderNotificationService>().requestPermission();
+  }
+
+  Widget get child => widget.child;
 
   @override
   Widget build(BuildContext context) {

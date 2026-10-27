@@ -58,20 +58,30 @@ func (h *WSHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Shop staff join their shop's room; customers join their own room.
 	claims, _ := token.Claims.(jwt.MapClaims)
 	shopID, _ := claims["shop"].(string)
-	if shopID == "" {
-		conn.WriteJSON(map[string]string{"type": "ERROR", "message": "no shop in token"})
+	userID, _ := claims["sub"].(string)
+	role, _ := claims["role"].(string)
+
+	var room string
+	switch {
+	case shopID != "":
+		room = app.ShopRoom(shopID)
+	case role == "customer" && userID != "":
+		room = app.CustomerRoom(userID)
+	default:
+		conn.WriteJSON(map[string]string{"type": "ERROR", "message": "token has no shop or customer"})
 		conn.Close()
 		return
 	}
 
-	// Register connection
-	h.hub.Register(shopID, conn)
-	conn.WriteJSON(map[string]string{"type": "CONNECTED", "shopId": shopID})
+	// Send the confirmation before registering, so it never races with an event write.
+	conn.WriteJSON(map[string]string{"type": "CONNECTED", "room": room})
+	h.hub.Register(room, conn)
 
 	// Keep connection alive, read messages (for future client-to-server messaging)
-	defer h.hub.Unregister(shopID, conn)
+	defer h.hub.Unregister(room, conn)
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {

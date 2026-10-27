@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -16,12 +17,27 @@ class OrderQueueScreen extends StatefulWidget {
 
 class _OrderQueueScreenState extends State<OrderQueueScreen> {
   late OrderQueueViewModel _vm;
+  StreamSubscription<String>? _noticeSub;
 
   @override
   void initState() {
     super.initState();
     _vm = context.read<OrderQueueViewModel>();
+    _noticeSub = _vm.notices.listen((text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(text),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+      ));
+    });
     _vm.init();
+  }
+
+  @override
+  void dispose() {
+    _noticeSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _logout() async {

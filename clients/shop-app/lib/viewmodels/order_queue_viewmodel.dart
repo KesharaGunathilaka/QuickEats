@@ -18,6 +18,7 @@ class OrderQueueViewModel extends ChangeNotifier {
   }) : _orderService = orderService, _authService = authService, _wsClient = wsClient;
 
   List<Order> _orders = [];
+  final _notices = StreamController<String>.broadcast();
   bool _isLoading = false;
   String? _error;
   OrderStatus _filterStatus = OrderStatus.confirmed;
@@ -28,6 +29,8 @@ class OrderQueueViewModel extends ChangeNotifier {
   String? get error => _error;
   OrderStatus get filterStatus => _filterStatus;
   String? get shopId => _authService.shopId;
+  /// One-off messages for the screen to show (e.g. a customer cancelled an order).
+  Stream<String> get notices => _notices.stream;
 
   int get confirmedCount => _orders.where((o) => o.status == OrderStatus.confirmed).length;
   int get preparingCount => _orders.where((o) => o.status == OrderStatus.preparing || o.status == OrderStatus.accepted).length;
@@ -110,6 +113,18 @@ class OrderQueueViewModel extends ChangeNotifier {
     if (type == 'NEW_ORDER') {
       // Reload orders to get the full order data
       loadOrders();
+    } else if (type == 'ORDER_CANCELLED') {
+      final data = message['data'] as Map<String, dynamic>?;
+      final orderId = data?['orderId'] as String?;
+      final idx = orderId == null ? -1 : _orders.indexWhere((o) => o.id == orderId);
+      if (idx >= 0) {
+        _orders[idx].status = OrderStatus.cancelled;
+        final code = _orders[idx].pickupCode;
+        _notices.add(code.isNotEmpty
+            ? 'Order $code was cancelled by the customer'
+            : 'An order was cancelled by the customer');
+        notifyListeners();
+      }
     } else if (type == 'ORDER_STATUS_CHANGED') {
       final data = message['data'] as Map<String, dynamic>?;
       if (data != null) {
@@ -129,6 +144,7 @@ class OrderQueueViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _wsClient.removeHandler(_handleWSMessage);
+    _notices.close();
     super.dispose();
   }
 }
