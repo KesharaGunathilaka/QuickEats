@@ -167,7 +167,20 @@ func (s *SagaOrchestrator) HandleStockInsufficient(ctx context.Context, event ev
 	return nil
 }
 
+// compensateCancel undoes the saga's completed steps: it cancels the order and
+// releases the stock reserved for it in catalog.
 func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.Order, reason string) {
+	if order.Status == domain.StatusCancelled {
+		// Redelivered event: the order is already cancelled, but retry the release in
+		// case it failed last time (releasing is idempotent).
+		s.releaseStock(ctx, order.ID)
+		return
+	}
+	if err := order.TransitionTo(domain.StatusCancelled); err != nil {
+		slog.Error("saga compensate: order can no longer be cancelled", "order_id", order.ID, "status", order.Status, "error", err)
+		return
+	}
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		slog.Error("saga compensate: begin tx failed", "error", err)
@@ -175,14 +188,34 @@ func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.O
 	}
 	defer tx.Rollback(ctx)
 
-	tx.Exec(ctx, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2`, domain.StatusCancelled, order.ID)
+	if _, err := tx.Exec(ctx, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2`, domain.StatusCancelled, order.ID); err != nil {
+		slog.Error("saga compensate: cancel order failed", "order_id", order.ID, "error", err)
+		return
+	}
 
 	cancelEvent := events.NewEvent("order.order.cancelled", "order", order.ID, domain.OrderCancelledPayload{
 		OrderID: order.ID, CustomerID: order.CustomerID, ShopID: order.ShopID,
 		Reason: reason, TotalAmount: order.TotalAmount, Currency: order.Currency,
 	})
-	outbox.WriteToOutbox(ctx, tx, cancelEvent)
-	tx.Commit(ctx)
+	if err := outbox.WriteToOutbox(ctx, tx, cancelEvent); err != nil {
+		slog.Error("saga compensate: write outbox failed", "order_id", order.ID, "error", err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		slog.Error("saga compensate: commit failed", "order_id", order.ID, "error", err)
+		return
+	}
 
+	s.releaseStock(ctx, order.ID)
 	slog.Info("saga: order cancelled (compensation)", "order_id", order.ID, "reason", reason)
+}
+
+// releaseStock returns every reservation held by the order. When stock was never
+// reserved (e.g. stock_insufficient), catalog finds nothing to release.
+func (s *SagaOrchestrator) releaseStock(ctx context.Context, orderID string) {
+	if err := s.catalogClient.ReleaseStock(ctx, orderID, nil); err != nil {
+		slog.Error("saga compensate: stock release failed", "order_id", orderID, "error", err)
+		return
+	}
+	slog.Info("saga: stock released", "order_id", orderID)
 }

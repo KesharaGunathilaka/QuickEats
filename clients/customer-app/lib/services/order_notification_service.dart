@@ -121,7 +121,9 @@ class OrderNotificationService {
       pickupCode: data?['pickupCode'] as String?,
       reason: data?['reason'] as String?,
     );
-    _updates.add(update);
+    // The "placed" event travels on its own topic and can arrive after the order has
+    // already moved on, so it only raises an alert and never rolls back an open screen.
+    if (update.status != OrderStatus.pendingPayment) _updates.add(update);
 
     // No alert for a cancellation the customer made themselves.
     if (update.reason == 'cancelled_by_customer') return;
@@ -130,7 +132,10 @@ class OrderNotificationService {
 
   Future<void> _showNotification(OrderUpdate update) async {
     if (kIsWeb || !_alertsEnabled) return;
-    var body = update.status.customerMessage;
+    final placed = update.status == OrderStatus.pendingPayment;
+    var body = placed
+        ? 'We received your order and are processing your payment.'
+        : update.status.customerMessage;
     if (update.status == OrderStatus.confirmed && (update.pickupCode ?? '').isNotEmpty) {
       body = '$body Pickup code: ${update.pickupCode}';
     }
@@ -138,7 +143,7 @@ class OrderNotificationService {
       await _plugin.show(
         // One notification per order: a newer status replaces the older one.
         id: update.orderId.hashCode & 0x7fffffff,
-        title: 'Order ${update.status.label}',
+        title: placed ? 'Order placed' : 'Order ${update.status.label}',
         body: body,
         notificationDetails: const NotificationDetails(android: _channel),
         payload: update.orderId,

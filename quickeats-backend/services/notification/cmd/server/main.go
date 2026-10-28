@@ -27,6 +27,7 @@ func main() {
 	if err != nil { slog.Error("kafka failed", "error", err); os.Exit(1) }
 	defer consumer.Close()
 
+	consumer.Subscribe("order.order.placed", "notification-svc", notifService.HandleOrderPlaced)
 	consumer.Subscribe("order.order.confirmed", "notification-svc", notifService.HandleOrderConfirmed)
 	consumer.Subscribe("order.order.cancelled", "notification-svc", notifService.HandleOrderCancelled)
 	consumer.Subscribe("order.order.rejected", "notification-svc", notifService.HandleOrderRejected)

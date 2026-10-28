@@ -22,7 +22,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<SettingsViewModel>().load();
+    // After the first frame: loading notifies listeners, which must not happen mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<SettingsViewModel>().load(); });
   }
 
   void _toast(String text, {bool error = false}) => ScaffoldMessenger.of(context).showSnackBar(

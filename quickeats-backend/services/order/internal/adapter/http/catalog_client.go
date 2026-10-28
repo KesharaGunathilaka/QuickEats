@@ -41,8 +41,9 @@ func (c *CatalogHTTPClient) ReleaseStock(ctx context.Context, orderID string, re
 	httpReq, _ := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/internal/stock/release", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(httpReq)
-	if err != nil { return err }
+	if err != nil { return fmt.Errorf("catalog release: %w", err) }
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK { return fmt.Errorf("catalog release failed: status %d", resp.StatusCode) }
 	return nil
 }
 

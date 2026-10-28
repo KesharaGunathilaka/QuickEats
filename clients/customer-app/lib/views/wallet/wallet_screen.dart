@@ -9,7 +9,7 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  @override void initState() { super.initState(); context.read<WalletViewModel>().loadWallet(); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<WalletViewModel>().loadWallet(); }); }
 
   @override Widget build(BuildContext context) {
     return Scaffold(

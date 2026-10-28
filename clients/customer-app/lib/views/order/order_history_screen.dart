@@ -11,7 +11,7 @@ class OrderHistoryScreen extends StatefulWidget {
 }
 
 class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
-  @override void initState() { super.initState(); context.read<OrderViewModel>().loadOrders(); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<OrderViewModel>().loadOrders(); }); }
 
   @override Widget build(BuildContext context) {
     return Scaffold(

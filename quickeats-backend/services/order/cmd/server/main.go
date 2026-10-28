@@ -50,7 +50,7 @@ func main() {
 
 	// Use cases
 	placeOrderUC := app.NewPlaceOrderUseCase(pool, orderRepo, idempotencyChecker)
-	orderStatusUC := app.NewOrderStatusUseCase(pool)
+	orderStatusUC := app.NewOrderStatusUseCase(pool, catalogClient)
 
 	// Saga orchestrator
 	saga := app.NewSagaOrchestrator(pool, orderRepo, catalogClient, paymentClient)

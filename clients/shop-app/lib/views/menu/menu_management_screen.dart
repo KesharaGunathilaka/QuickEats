@@ -15,7 +15,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<MenuViewModel>().loadItems();
+    // After the first frame: loading notifies listeners, which must not happen mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<MenuViewModel>().loadItems(); });
   }
 
   @override

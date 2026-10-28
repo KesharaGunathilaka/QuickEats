@@ -10,13 +10,24 @@ class ShopListScreen extends StatefulWidget {
 }
 
 class _ShopListScreenState extends State<ShopListScreen> {
-  @override void initState() { super.initState(); context.read<ShopsViewModel>().loadShops(); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<ShopsViewModel>().loadShops(); }); }
 
   @override Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Shops', style: TextStyle(fontWeight: FontWeight.w700)), backgroundColor: AppColors.white, foregroundColor: AppColors.textPrimary, elevation: 0),
       body: Consumer<ShopsViewModel>(builder: (_, vm, __) {
         if (vm.isLoading) return const Center(child: CircularProgressIndicator());
+        if (vm.error != null && vm.shops.isEmpty) {
+          return Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.wifi_off, size: 56, color: AppColors.textMuted),
+            const SizedBox(height: 12),
+            Text(vm.error!, style: const TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+            const Text('Check your internet connection and try again.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+            const SizedBox(height: 16),
+            FilledButton.icon(onPressed: vm.loadShops, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+          ])));
+        }
         if (vm.shops.isEmpty) return const Center(child: Text('No shops available'));
         return RefreshIndicator(
           onRefresh: vm.loadShops,

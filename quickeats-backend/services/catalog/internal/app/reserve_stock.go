@@ -97,7 +97,13 @@ func (uc *ReserveStockUseCase) Reserve(ctx context.Context, orderID string, item
 	return &ReserveResult{Reservations: reservations, ExpiresAt: expiresAt}, nil, nil
 }
 
+// Release returns reserved stock. With no reservation IDs it releases every reservation
+// held by the order, which is what saga compensation uses. Deleting the rows makes it
+// idempotent: a repeated release finds nothing left to return.
 func (uc *ReserveStockUseCase) Release(ctx context.Context, orderID string, reservationIDs []string) (int, error) {
+	if len(reservationIDs) == 0 {
+		return uc.releaseOrder(ctx, orderID)
+	}
 	released := 0
 	for _, resID := range reservationIDs {
 		var menuItemID string
@@ -112,6 +118,33 @@ func (uc *ReserveStockUseCase) Release(ctx context.Context, orderID string, rese
 		released++
 	}
 	return released, nil
+}
+
+func (uc *ReserveStockUseCase) releaseOrder(ctx context.Context, orderID string) (int, error) {
+	rows, err := uc.db.Query(ctx,
+		`DELETE FROM stock_reservations WHERE order_id = $1 RETURNING menu_item_id, quantity`, orderID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("release order %s: %w", orderID, err)
+	}
+	var items []port.StockReservationItem
+	for rows.Next() {
+		var item port.StockReservationItem
+		if err := rows.Scan(&item.MenuItemID, &item.Quantity); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan released reservation: %w", err)
+		}
+		items = append(items, item)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("release order %s: %w", orderID, err)
+	}
+
+	for _, item := range items {
+		uc.stockCache.IncrementStock(ctx, item.MenuItemID, item.Quantity)
+	}
+	return len(items), nil
 }
 
 func (uc *ReserveStockUseCase) rollbackRedis(ctx context.Context, items []port.StockReservationItem) {
