@@ -98,13 +98,21 @@ func (s *SagaOrchestrator) requestPayment(ctx context.Context, order *domain.Ord
 	_, err := s.paymentClient.CreatePaymentIntent(ctx, port.CreatePaymentIntentRequest{
 		OrderID:    order.ID,
 		CustomerID: order.CustomerID,
+		ShopID:     order.ShopID,
 		Amount:     order.TotalAmount,
 		Currency:   order.Currency,
 		Method:     order.PaymentMethod,
 	})
 	if err != nil {
-		slog.Error("saga: payment intent failed, compensating", "order_id", order.ID, "error", err)
-		s.compensateCancel(ctx, order, "payment_failed")
+		// A declined card carries its reason (no_card, insufficient_funds), which is
+		// stored on the cancelled order so the app can tell the customer what to fix.
+		reason := port.DeclineOther
+		var declined *port.PaymentDeclinedError
+		if errors.As(err, &declined) {
+			reason = declined.Reason
+		}
+		slog.Error("saga: payment failed, compensating", "order_id", order.ID, "reason", reason, "error", err)
+		s.compensateCancel(ctx, order, reason)
 		return
 	}
 
@@ -121,6 +129,8 @@ func (s *SagaOrchestrator) HandlePaymentCompleted(ctx context.Context, event eve
 	prevStatus := order.Status
 	if err := order.TransitionTo(domain.StatusConfirmed); err != nil {
 		slog.Error("saga: transition to confirmed failed", "order_id", order.ID, "error", err)
+		// Paid for an order that was already cancelled (e.g. payment timeout): give the money back.
+		s.refundIfClosed(ctx, order)
 		return nil
 	}
 
@@ -152,6 +162,9 @@ func (s *SagaOrchestrator) HandlePaymentCompleted(ctx context.Context, event eve
 	}
 	if tag.RowsAffected() == 0 {
 		slog.Warn("saga confirm: order changed status meanwhile, not confirming", "order_id", order.ID)
+		if current, err := s.orderRepo.GetByID(ctx, order.ID); err == nil && current != nil {
+			s.refundIfClosed(ctx, current)
+		}
 		return nil
 	}
 
@@ -177,8 +190,38 @@ func (s *SagaOrchestrator) HandlePaymentFailed(ctx context.Context, event events
 		return err
 	}
 
-	s.compensateCancel(ctx, order, "payment_failed")
+	s.compensateCancel(ctx, order, declineReason(event))
 	return nil
+}
+
+// declineReason reads the reason code from a payment.failed event.
+func declineReason(event events.Event) string {
+	var data struct {
+		Reason string `json:"reason"`
+	}
+	payload, err := json.Marshal(event.Payload)
+	if err == nil {
+		err = json.Unmarshal(payload, &data)
+	}
+	switch data.Reason {
+	case port.DeclineNoCard, port.DeclineInsufficientFunds:
+		return data.Reason
+	default:
+		return port.DeclineOther
+	}
+}
+
+// refundIfClosed refunds the payment of an order that ended up cancelled or rejected.
+// Refunding is idempotent in the payment service, so repeating it is harmless.
+func (s *SagaOrchestrator) refundIfClosed(ctx context.Context, order *domain.Order) {
+	if order.Status != domain.StatusCancelled && order.Status != domain.StatusRejected {
+		return
+	}
+	if err := s.paymentClient.RefundOrder(ctx, order.ID, order.CustomerID); err != nil {
+		slog.Error("saga: refund failed", "order_id", order.ID, "error", err)
+		return
+	}
+	slog.Info("saga: refunded payment for closed order", "order_id", order.ID)
 }
 
 // HandleStockInsufficient triggers compensation: cancel order.
@@ -215,8 +258,8 @@ func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.O
 	defer tx.Rollback(ctx)
 
 	// Conditional on the status we read, so a concurrent confirm and cancel can't both win.
-	tag, err := tx.Exec(ctx, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2 AND status=$3`,
-		domain.StatusCancelled, order.ID, prevStatus)
+	tag, err := tx.Exec(ctx, `UPDATE orders SET status=$1, cancel_reason=$2, updated_at=now() WHERE id=$3 AND status=$4`,
+		domain.StatusCancelled, reason, order.ID, prevStatus)
 	if err != nil {
 		slog.Error("saga compensate: cancel order failed", "order_id", order.ID, "error", err)
 		return

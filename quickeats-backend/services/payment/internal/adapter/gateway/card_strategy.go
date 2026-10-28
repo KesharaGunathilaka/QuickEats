@@ -4,38 +4,34 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/quickeats/services/payment/internal/domain"
+	"github.com/quickeats/services/payment/internal/port"
 )
 
+// CardStrategy charges the customer's saved card. This demo has no real card network:
+// each saved card holds its own balance, and a charge debits it immediately.
 type CardStrategy struct {
-	merchantID     string
-	merchantSecret string
-	sandbox        bool
+	cards port.CardRepository
 }
 
-func NewCardStrategy(merchantID, merchantSecret string, sandbox bool) *CardStrategy {
-	return &CardStrategy{merchantID: merchantID, merchantSecret: merchantSecret, sandbox: sandbox}
+func NewCardStrategy(cards port.CardRepository) *CardStrategy {
+	return &CardStrategy{cards: cards}
 }
 
+// Execute returns domain.ErrNoCard or domain.ErrInsufficientFunds when the charge is declined.
 func (s *CardStrategy) Execute(ctx context.Context, payment *domain.Payment) (*domain.PaymentResult, error) {
-	// In production: generate a PayHere/Stripe checkout session URL
-	// For now: return a simulated redirect URL
-	sessionID := uuid.New().String()
-
-	// Local dev: no gateway credentials configured, so simulate an instant successful charge
-	if s.merchantID == "" {
-		return &domain.PaymentResult{GatewayRef: fmt.Sprintf("simulated:%s", sessionID), Completed: true}, nil
+	card, err := s.cards.GetByUserID(ctx, payment.CustomerID)
+	if err != nil {
+		return nil, err
 	}
-
-	baseURL := "https://sandbox.payhere.lk"
-	if !s.sandbox {
-		baseURL = "https://www.payhere.lk"
+	if card == nil {
+		return nil, domain.ErrNoCard
 	}
-
+	if err := s.cards.Debit(ctx, payment.CustomerID, payment.Amount); err != nil {
+		return nil, err
+	}
 	return &domain.PaymentResult{
-		GatewayRef:         sessionID,
-		GatewayRedirectURL: fmt.Sprintf("%s/pay/checkout/%s", baseURL, sessionID),
-		Completed:          false, // Awaits webhook callback
+		GatewayRef: fmt.Sprintf("card:%s:%s", card.Brand, card.Last4),
+		Completed:  true,
 	}, nil
 }

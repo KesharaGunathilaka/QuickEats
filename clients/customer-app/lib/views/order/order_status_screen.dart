@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:quickeats_customer/core/constants/app_colors.dart';
 import 'package:quickeats_customer/core/constants/order_status.dart';
+import 'package:quickeats_customer/models/order.dart';
 import 'package:quickeats_customer/viewmodels/order_viewmodel.dart';
 
 class OrderStatusScreen extends StatefulWidget {
@@ -42,6 +44,12 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
             ]),
           ),
           const SizedBox(height: 16),
+
+          // Why payment failed, and the way to fix it
+          if (order.status == OrderStatus.cancelled && order.paymentDeclined) ...[
+            _PaymentDeclinedBanner(order: order),
+            const SizedBox(height: 16),
+          ],
 
           // Pickup code + QR
           if (order.pickupCode.isNotEmpty) Container(
@@ -92,5 +100,43 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
         ])),
       );
     });
+  }
+}
+
+/// Shown on an order cancelled because the card was declined.
+class _PaymentDeclinedBanner extends StatelessWidget {
+  final Order order;
+  const _PaymentDeclinedBanner({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, message) = switch (order.cancelReason) {
+      'insufficient_funds' => ('Insufficient balance', "Your card didn't have enough balance for ${order.formattedTotal}, so you weren't charged. Add a different card and order again."),
+      'no_card' => ('No card on file', 'There was no card to charge, so the order was cancelled. Add a card and order again.'),
+      _ => ('Payment declined', "The payment didn't go through, so you weren't charged. Check your card or add a new one."),
+    };
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.error.withOpacity(0.06), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.error.withOpacity(0.35))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.credit_card_off_outlined, color: AppColors.error),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.error))),
+        ]),
+        const SizedBox(height: 8),
+        Text(message, style: const TextStyle(color: AppColors.textPrimary, height: 1.35)),
+        const SizedBox(height: 12),
+        Wrap(spacing: 10, runSpacing: 8, children: [
+          FilledButton.icon(
+            onPressed: () => context.push('/card/add'),
+            icon: const Icon(Icons.add_card, size: 18),
+            label: const Text('Add a new card'),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+          ),
+          OutlinedButton(onPressed: () => context.go('/shops'), child: const Text('Back to shops')),
+        ]),
+      ]),
+    );
   }
 }

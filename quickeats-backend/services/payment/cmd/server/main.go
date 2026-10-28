@@ -35,19 +35,20 @@ func main() {
 
 	paymentRepo := pgRepo.NewPaymentRepo(pool)
 	ledgerRepo := pgRepo.NewLedgerRepo(pool)
-	walletRepo := pgRepo.NewWalletRepo(pool)
+	cardRepo := pgRepo.NewCardRepo(pool)
 
+	// Card is the only payment method: the customer's saved card is charged directly.
 	strategies := map[string]domain.PaymentStrategy{
-		"card":   gateway.NewCardStrategy(os.Getenv("PAYHERE_MERCHANT_ID"), os.Getenv("PAYHERE_MERCHANT_SECRET"), true),
-		"wallet": gateway.NewWalletStrategy(walletRepo),
+		"card": gateway.NewCardStrategy(cardRepo),
 	}
 
-	paymentUC := app.NewCreatePaymentUseCase(pool, paymentRepo, ledgerRepo, walletRepo, strategies)
+	paymentUC := app.NewCreatePaymentUseCase(pool, paymentRepo, ledgerRepo, strategies)
+	cardUC := app.NewCardUseCase(cardRepo)
 
 	relay := outbox.NewRelay(pool, publisher, 2*time.Second)
 	go relay.Start(context.Background())
 
-	router := httpAdapter.NewRouter(paymentUC, paymentRepo, walletRepo, cfg.JWTSecret)
+	router := httpAdapter.NewRouter(paymentUC, cardUC, cfg.JWTSecret)
 
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Port), Handler: router, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second}
 	go func() {

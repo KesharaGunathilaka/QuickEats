@@ -7,11 +7,12 @@ class OrderService {
   final ApiClient _api;
   OrderService({required ApiClient apiClient}) : _api = apiClient;
 
-  Future<Order> placeOrder({required String shopId, required String idempotencyKey, required String paymentMethod, required List<CartItem> items}) async {
+  /// Places an order paid with the customer's saved card.
+  Future<Order> placeOrder({required String shopId, required String idempotencyKey, required List<CartItem> items}) async {
     final resp = await _api.dio.post(ApiConstants.orders, data: {
       'shopId': shopId,
       'idempotencyKey': idempotencyKey,
-      'paymentMethod': paymentMethod,
+      'paymentMethod': 'card',
       'items': items.map((c) => {
         'menuItemId': c.menuItem.id,
         'itemName': c.menuItem.name,

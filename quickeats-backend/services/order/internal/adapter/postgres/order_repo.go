@@ -22,10 +22,10 @@ func (r *OrderRepo) Create(ctx context.Context, order *domain.Order) error {
 func (r *OrderRepo) GetByID(ctx context.Context, id string) (*domain.Order, error) {
 	var o domain.Order
 	err := r.db.QueryRow(ctx,
-		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,created_at,updated_at
+		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,COALESCE(reject_reason,''),cancel_reason,created_at,updated_at
 		 FROM orders WHERE id=$1`, id,
 	).Scan(&o.ID, &o.IdempotencyKey, &o.CustomerID, &o.ShopID, &o.Status, &o.PickupCode,
-		&o.CancellationDeadline, &o.TotalAmount, &o.Currency, &o.PaymentMethod, &o.CreatedAt, &o.UpdatedAt)
+		&o.CancellationDeadline, &o.TotalAmount, &o.Currency, &o.PaymentMethod, &o.RejectReason, &o.CancelReason, &o.CreatedAt, &o.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
 	if err != nil { return nil, fmt.Errorf("get order: %w", err) }
 
@@ -66,7 +66,7 @@ func (r *OrderRepo) SetRejectReason(ctx context.Context, id, reason string) erro
 }
 
 func (r *OrderRepo) ListByShop(ctx context.Context, shopID string, limit int, cursor string) ([]*domain.Order, error) {
-	query := `SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,created_at,updated_at
+	query := `SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,COALESCE(reject_reason,''),cancel_reason,created_at,updated_at
 		FROM orders WHERE shop_id=$1 ORDER BY created_at DESC LIMIT $2`
 	rows, err := r.db.Query(ctx, query, shopID, limit)
 	if err != nil { return nil, err }
@@ -76,7 +76,7 @@ func (r *OrderRepo) ListByShop(ctx context.Context, shopID string, limit int, cu
 
 func (r *OrderRepo) ListByCustomer(ctx context.Context, customerID string, limit int, cursor string) ([]*domain.Order, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,created_at,updated_at
+		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,COALESCE(reject_reason,''),cancel_reason,created_at,updated_at
 		 FROM orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT $2`, customerID, limit)
 	if err != nil { return nil, err }
 	defer rows.Close()
@@ -85,7 +85,7 @@ func (r *OrderRepo) ListByCustomer(ctx context.Context, customerID string, limit
 
 func (r *OrderRepo) FindTimedOutOrders(ctx context.Context, status domain.OrderStatus, olderThanMinutes int) ([]*domain.Order, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,created_at,updated_at
+		`SELECT id,idempotency_key,customer_id,shop_id,status,pickup_code,cancellation_deadline,total_amount,currency,payment_method,COALESCE(reject_reason,''),cancel_reason,created_at,updated_at
 		 FROM orders WHERE status=$1 AND created_at < now() - ($2 || ' minutes')::interval`, status, fmt.Sprintf("%d", olderThanMinutes))
 	if err != nil { return nil, err }
 	defer rows.Close()
@@ -97,7 +97,7 @@ func scanOrders(rows pgx.Rows) ([]*domain.Order, error) {
 	for rows.Next() {
 		var o domain.Order
 		if err := rows.Scan(&o.ID, &o.IdempotencyKey, &o.CustomerID, &o.ShopID, &o.Status, &o.PickupCode,
-			&o.CancellationDeadline, &o.TotalAmount, &o.Currency, &o.PaymentMethod, &o.CreatedAt, &o.UpdatedAt); err != nil {
+			&o.CancellationDeadline, &o.TotalAmount, &o.Currency, &o.PaymentMethod, &o.RejectReason, &o.CancelReason, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		orders = append(orders, &o)

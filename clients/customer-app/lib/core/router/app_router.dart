@@ -9,7 +9,8 @@ import 'package:quickeats_customer/views/cart/cart_screen.dart';
 import 'package:quickeats_customer/views/order/checkout_screen.dart';
 import 'package:quickeats_customer/views/order/order_status_screen.dart';
 import 'package:quickeats_customer/views/order/order_history_screen.dart';
-import 'package:quickeats_customer/views/wallet/wallet_screen.dart';
+import 'package:quickeats_customer/views/card/add_card_screen.dart';
+import 'package:quickeats_customer/views/card/card_screen.dart';
 import 'package:quickeats_customer/views/shell_screen.dart';
 import 'package:quickeats_customer/views/settings/settings_screen.dart';
 
@@ -34,7 +35,8 @@ final appRouter = GoRouter(
         GoRoute(path: '/checkout', builder: (_, __) => const CheckoutScreen()),
         GoRoute(path: '/orders', builder: (_, __) => const OrderHistoryScreen()),
         GoRoute(path: '/orders/:id', builder: (_, s) => OrderStatusScreen(orderId: s.pathParameters['id']!)),
-        GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
+        GoRoute(path: '/card', builder: (_, __) => const CardScreen()),
+        GoRoute(path: '/card/add', builder: (_, __) => const AddCardScreen()),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
       ],
     ),

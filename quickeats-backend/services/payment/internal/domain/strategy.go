@@ -5,7 +5,7 @@ import "context"
 type PaymentResult struct {
 	GatewayRef         string `json:"gatewayRef,omitempty"`
 	GatewayRedirectURL string `json:"gatewayRedirectUrl,omitempty"`
-	Completed          bool   `json:"completed"` // true for wallet (instant), false for card (async)
+	Completed          bool   `json:"completed"` // true when charged immediately, false if a gateway confirms later
 }
 
 // PaymentStrategy defines how a payment method processes a charge.

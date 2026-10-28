@@ -47,7 +47,7 @@ services:
     url: http://payment:8084
     routes:
       - name: payment-routes
-        paths: ["/api/v1/payments", "/api/v1/wallet"]
+        paths: ["/api/v1/payments", "/api/v1/cards"]
         strip_path: false
 
   # strip_path removes the whole "/notification/health" prefix, so the

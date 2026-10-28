@@ -16,6 +16,7 @@ const (
 type Payment struct {
 	ID         string        `json:"id"`
 	OrderID    string        `json:"orderId"`
+	ShopID     string        `json:"shopId"` // the shop being paid
 	Method     string        `json:"method"`
 	Status     PaymentStatus `json:"status"`
 	Amount     int64         `json:"amount"`

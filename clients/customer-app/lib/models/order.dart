@@ -10,8 +10,15 @@ class Order {
   final String paymentMethod;
   final List<OrderItem> items;
   final DateTime createdAt;
+  /// Why the order was cancelled: insufficient_funds, no_card, payment_failed,
+  /// payment_timeout, stock_insufficient, cancelled_by_customer.
+  final String cancelReason;
+  final String rejectReason;
 
-  Order({required this.id, required this.shopId, required this.status, required this.pickupCode, required this.totalAmount, required this.currency, required this.paymentMethod, required this.items, required this.createdAt});
+  Order({required this.id, required this.shopId, required this.status, required this.pickupCode, required this.totalAmount, required this.currency, required this.paymentMethod, required this.items, required this.createdAt, this.cancelReason = '', this.rejectReason = ''});
+
+  /// The card was declined, so the customer needs to add or change a card.
+  bool get paymentDeclined => cancelReason == 'insufficient_funds' || cancelReason == 'no_card' || cancelReason == 'payment_failed';
 
   factory Order.fromJson(Map<String, dynamic> json) => Order(
     id: json['id'] ?? '', shopId: json['shopId'] ?? '',
@@ -20,6 +27,7 @@ class Order {
     currency: json['currency'] ?? 'LKR', paymentMethod: json['paymentMethod'] ?? '',
     items: (json['items'] as List?)?.map((e) => OrderItem.fromJson(e)).toList() ?? [],
     createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
+    cancelReason: json['cancelReason'] ?? '', rejectReason: json['rejectReason'] ?? '',
   );
 
   String get formattedTotal => 'LKR ${(totalAmount / 100).toStringAsFixed(2)}';

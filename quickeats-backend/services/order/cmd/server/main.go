@@ -50,7 +50,7 @@ func main() {
 
 	// Use cases
 	placeOrderUC := app.NewPlaceOrderUseCase(pool, orderRepo, idempotencyChecker)
-	orderStatusUC := app.NewOrderStatusUseCase(pool, catalogClient)
+	orderStatusUC := app.NewOrderStatusUseCase(pool, catalogClient, paymentClient)
 
 	// Saga orchestrator
 	saga := app.NewSagaOrchestrator(pool, orderRepo, catalogClient, paymentClient)
@@ -72,7 +72,7 @@ func main() {
 	go relay.Start(context.Background())
 
 	// HTTP
-	handler := httpAdapter.NewOrderHandler(placeOrderUC, orderStatusUC, orderRepo, catalogClient)
+	handler := httpAdapter.NewOrderHandler(placeOrderUC, orderStatusUC, orderRepo, catalogClient, paymentClient)
 	router := httpAdapter.NewRouter(handler, cfg.JWTSecret)
 
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Port), Handler: router, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second}
