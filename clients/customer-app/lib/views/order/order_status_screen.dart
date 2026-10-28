@@ -12,8 +12,11 @@ class OrderStatusScreen extends StatefulWidget {
 }
 
 class _OrderStatusScreenState extends State<OrderStatusScreen> {
-  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<OrderViewModel>().trackOrder(widget.orderId); }); }
-  @override void dispose() { context.read<OrderViewModel>().stopPolling(); super.dispose(); }
+  // Kept so dispose doesn't look up the provider through a deactivated context.
+  late final OrderViewModel _vm;
+
+  @override void initState() { super.initState(); _vm = context.read<OrderViewModel>(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _vm.trackOrder(widget.orderId); }); }
+  @override void dispose() { _vm.stopPolling(); super.dispose(); }
 
   @override Widget build(BuildContext context) {
     return Consumer<OrderViewModel>(builder: (_, vm, __) {
@@ -35,8 +38,6 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
               if (order.status.isActive) ...[
                 const SizedBox(height: 16),
                 const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
-                const SizedBox(height: 6),
-                const Text('Auto-refreshing every 5s', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
               ],
             ]),
           ),
