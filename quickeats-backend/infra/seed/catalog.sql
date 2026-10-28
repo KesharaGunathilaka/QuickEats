@@ -1,31 +1,5 @@
--- Dev seed data for local testing of the mobile apps.
--- Safe to re-run: every insert is ON CONFLICT DO NOTHING.
---
--- Logins (password for all: password123)
---   customer@quickeats.dev  -> customer (wallet: LKR 5,000.00)
---   staff@quickeats.dev     -> shop_staff for "Campus Canteen"
--- New customers and shop owners can self-register with organisation code "demo"
--- and an @quickeats.dev or @gmail.com email address.
-
-\connect identity_db
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-INSERT INTO organisations (id, name, slug, verify_method, verify_config)
-VALUES ('11111111-1111-1111-1111-111111111111', 'QuickEats Demo University', 'demo',
-        'email_domain', '{"domains": ["quickeats.dev", "gmail.com"]}')
-ON CONFLICT (id) DO UPDATE SET verify_config = EXCLUDED.verify_config, updated_at = now();
-
-INSERT INTO users (id, organisation_id, email, password_hash, display_name, role, shop_id, verified)
-VALUES
-  ('22222222-2222-2222-2222-000000000001', '11111111-1111-1111-1111-111111111111',
-   'customer@quickeats.dev', crypt('password123', gen_salt('bf', 10)), 'Demo Customer', 'customer', NULL, true),
-  ('22222222-2222-2222-2222-000000000002', '11111111-1111-1111-1111-111111111111',
-   'staff@quickeats.dev', crypt('password123', gen_salt('bf', 10)), 'Canteen Staff', 'shop_staff',
-   '33333333-3333-3333-3333-000000000001', true)
-ON CONFLICT DO NOTHING;
-
-\connect catalog_db
+-- Dev seed data: catalog database (demo shops and menus).
+-- IDs match identity.sql (organisation, shop staff). Safe to re-run.
 
 INSERT INTO shops (id, organisation_id, name, description, is_open, owner_id)
 VALUES
@@ -57,10 +31,4 @@ VALUES
    'Cappuccino', '', 35000, 'Coffee', 50, true),
   ('44444444-4444-4444-4444-000000000006', '33333333-3333-3333-3333-000000000002',
    'Chocolate Muffin', '', 18000, 'Snacks', 15, true)
-ON CONFLICT DO NOTHING;
-
-\connect payment_db
-
-INSERT INTO wallets (id, user_id, balance, currency)
-VALUES ('55555555-5555-5555-5555-000000000001', '22222222-2222-2222-2222-000000000001', 500000, 'LKR')
 ON CONFLICT DO NOTHING;

@@ -1,21 +1,86 @@
 version: "3.9"
 
+# One Postgres server per service (database per service): a failed database only
+# takes down its own service. Memory is capped per database because four of them
+# share one host with Kafka, Redis and the services.
+x-postgres-defaults: &postgres-defaults
+  image: postgres:16-alpine
+  restart: on-failure
+  command:
+    - postgres
+    - -c
+    - shared_buffers=32MB
+    - -c
+    - max_connections=30
+    - -c
+    - work_mem=2MB
+    - -c
+    - maintenance_work_mem=16MB
+    - -c
+    - effective_cache_size=128MB
+  mem_limit: 256m
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+
+# One-shot jobs: each service's migrations and seed run against its own database only,
+# so a broken database never blocks another service from starting.
+x-migrate-defaults: &migrate-defaults
+  image: migrate/migrate:v4.17.1
+  volumes:
+    - ./services:/services:ro
+
+x-seed-defaults: &seed-defaults
+  image: postgres:16-alpine
+  volumes:
+    - ./infra/seed:/seed:ro
+
 services:
-  postgres:
-    image: postgres:16-alpine
+  identity-db:
+    <<: *postgres-defaults
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: quickeats
-      POSTGRES_PASSWORD: quickeats
+      POSTGRES_DB: identity_db
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./infra/init-databases.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U quickeats"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - identity-pgdata:/var/lib/postgresql/data
+
+  catalog-db:
+    <<: *postgres-defaults
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: catalog_db
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog
+    volumes:
+      - catalog-pgdata:/var/lib/postgresql/data
+
+  order-db:
+    <<: *postgres-defaults
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order
+    volumes:
+      - order-pgdata:/var/lib/postgresql/data
+
+  payment-db:
+    <<: *postgres-defaults
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+    volumes:
+      - payment-pgdata:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
@@ -55,33 +120,54 @@ services:
       retries: 20
       start_period: 10s
 
-  # One-shot: apply each service's migrations to its own database
-  migrate:
-    image: migrate/migrate:v4.17.1
-    volumes:
-      - ./services:/services:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -e
-        for svc in identity catalog order payment; do
-          echo "migrating $$svc"
-          migrate -path /services/$$svc/migrations -database "postgres://quickeats:quickeats@postgres:5432/$${svc}_db?sslmode=disable" up
-        done
+  identity-migrate:
+    <<: *migrate-defaults
+    command: ["-path", "/services/identity/migrations", "-database", "postgres://identity:identity@identity-db:5432/identity_db?sslmode=disable", "up"]
     depends_on:
-      postgres:
+      identity-db:
         condition: service_healthy
 
-  # One-shot: load dev data (idempotent)
-  seed:
-    image: postgres:16-alpine
-    environment:
-      PGPASSWORD: quickeats
-    volumes:
-      - ./infra/seed-dev.sql:/seed-dev.sql:ro
-    command: ["psql", "-h", "postgres", "-U", "quickeats", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-f", "/seed-dev.sql"]
+  catalog-migrate:
+    <<: *migrate-defaults
+    command: ["-path", "/services/catalog/migrations", "-database", "postgres://catalog:catalog@catalog-db:5432/catalog_db?sslmode=disable", "up"]
     depends_on:
-      migrate:
+      catalog-db:
+        condition: service_healthy
+
+  order-migrate:
+    <<: *migrate-defaults
+    command: ["-path", "/services/order/migrations", "-database", "postgres://order:order@order-db:5432/order_db?sslmode=disable", "up"]
+    depends_on:
+      order-db:
+        condition: service_healthy
+
+  payment-migrate:
+    <<: *migrate-defaults
+    command: ["-path", "/services/payment/migrations", "-database", "postgres://payment:payment@payment-db:5432/payment_db?sslmode=disable", "up"]
+    depends_on:
+      payment-db:
+        condition: service_healthy
+
+  # Demo data (idempotent). Order has none.
+  identity-seed:
+    <<: *seed-defaults
+    command: ["psql", "postgres://identity:identity@identity-db:5432/identity_db?sslmode=disable", "-v", "ON_ERROR_STOP=1", "-f", "/seed/identity.sql"]
+    depends_on:
+      identity-migrate:
+        condition: service_completed_successfully
+
+  catalog-seed:
+    <<: *seed-defaults
+    command: ["psql", "postgres://catalog:catalog@catalog-db:5432/catalog_db?sslmode=disable", "-v", "ON_ERROR_STOP=1", "-f", "/seed/catalog.sql"]
+    depends_on:
+      catalog-migrate:
+        condition: service_completed_successfully
+
+  payment-seed:
+    <<: *seed-defaults
+    command: ["psql", "postgres://payment:payment@payment-db:5432/payment_db?sslmode=disable", "-v", "ON_ERROR_STOP=1", "-f", "/seed/payment.sql"]
+    depends_on:
+      payment-migrate:
         condition: service_completed_successfully
 
   kong:
@@ -112,7 +198,7 @@ services:
     ports:
       - "8081:8081"
     environment:
-      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/identity_db?sslmode=disable
+      DATABASE_URL: postgres://identity:identity@identity-db:5432/identity_db?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
@@ -122,11 +208,13 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@quickeats.dev}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
     depends_on:
-      seed:
+      identity-seed:
         condition: service_completed_successfully
-      postgres:
+      identity-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
   catalog:
@@ -137,17 +225,19 @@ services:
     ports:
       - "8082:8082"
     environment:
-      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/catalog_db?sslmode=disable
+      DATABASE_URL: postgres://catalog:catalog@catalog-db:5432/catalog_db?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       PORT: "8082"
     depends_on:
-      seed:
+      catalog-seed:
         condition: service_completed_successfully
-      postgres:
+      catalog-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
 
   order:
@@ -158,7 +248,7 @@ services:
     ports:
       - "8083:8083"
     environment:
-      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/order_db?sslmode=disable
+      DATABASE_URL: postgres://order:order@order-db:5432/order_db?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
@@ -166,9 +256,9 @@ services:
       PAYMENT_SERVICE_URL: http://payment:8084
       PORT: "8083"
     depends_on:
-      seed:
+      order-migrate:
         condition: service_completed_successfully
-      postgres:
+      order-db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -183,15 +273,15 @@ services:
     ports:
       - "8084:8084"
     environment:
-      DATABASE_URL: postgres://quickeats:quickeats@postgres:5432/payment_db?sslmode=disable
+      DATABASE_URL: postgres://payment:payment@payment-db:5432/payment_db?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in quickeats-backend/.env}
       PORT: "8084"
     depends_on:
-      seed:
+      payment-seed:
         condition: service_completed_successfully
-      postgres:
+      payment-db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -226,5 +316,8 @@ services:
     restart: on-failure
 
 volumes:
-  pgdata:
+  identity-pgdata:
+  catalog-pgdata:
+  order-pgdata:
+  payment-pgdata:
   kafkadata:

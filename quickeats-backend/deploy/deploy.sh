@@ -14,8 +14,11 @@ dc() { docker compose -p quickeats -f docker-compose.prod.yml --env-file .env.pr
 echo "==> Pulling images for $TAG"
 dc pull --quiet identity catalog order payment notification admin
 
+# Each service migrates its own database; any failure stops the deploy before the switch.
 echo "==> Running migrations"
-dc run --rm migrate
+for svc in identity catalog order payment; do
+  dc run --rm "$svc-migrate"
+done
 
 echo "==> Starting stack on $TAG"
 dc up -d --remove-orphans
