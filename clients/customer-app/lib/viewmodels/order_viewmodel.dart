@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:quickeats_customer/models/order.dart';
 import 'package:quickeats_customer/models/cart_item.dart';
@@ -21,6 +22,7 @@ class OrderViewModel extends ChangeNotifier {
   bool _isLoading = false;
   bool _isPlacing = false;
   String? _error;
+  String? _errorCode;
   Timer? _pollTimer;
 
   List<Order> get orders => _orders;
@@ -28,19 +30,22 @@ class OrderViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isPlacing => _isPlacing;
   String? get error => _error;
+  /// The server's error code for the last failed order, e.g. NO_CARD or INSUFFICIENT_FUNDS.
+  String? get errorCode => _errorCode;
 
-  Future<Order?> placeOrder({required String shopId, required String paymentMethod, required List<CartItem> items}) async {
-    _isPlacing = true; _error = null; notifyListeners();
+  Future<Order?> placeOrder({required String shopId, required List<CartItem> items}) async {
+    _isPlacing = true; _error = null; _errorCode = null; notifyListeners();
     try {
       final order = await _orderService.placeOrder(
-        shopId: shopId, idempotencyKey: const Uuid().v4(), paymentMethod: paymentMethod, items: items,
+        shopId: shopId, idempotencyKey: const Uuid().v4(), items: items,
       );
       _activeOrder = order;
       _startPolling(order.id);
       _isPlacing = false; notifyListeners();
       return order;
     } catch (e) {
-      _isPlacing = false; _error = 'Failed to place order'; notifyListeners();
+      _errorCode = _codeOf(e);
+      _isPlacing = false; _error = apiErrorMessage(e, 'Failed to place order'); notifyListeners();
       return null;
     }
   }
@@ -94,6 +99,14 @@ class OrderViewModel extends ChangeNotifier {
   }
 
   void stopPolling() { _pollTimer?.cancel(); }
+
+  String? _codeOf(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map && data['error'] is Map && data['error']['code'] is String) return data['error']['code'] as String;
+    }
+    return null;
+  }
 
   @override
   void dispose() { _pollTimer?.cancel(); _updatesSub?.cancel(); super.dispose(); }

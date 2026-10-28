@@ -4,7 +4,7 @@
 -- Safe to re-run: every insert is ON CONFLICT DO NOTHING / DO UPDATE.
 --
 -- Logins (password for all: password123)
---   customer@quickeats.dev  -> customer (wallet: LKR 5,000.00)
+--   customer@quickeats.dev  -> customer (no card yet: add one in the app's Card tab)
 --   staff@quickeats.dev     -> shop_staff for "Campus Canteen"
 -- New customers and shop owners can self-register with organisation code "demo"
 -- and an @quickeats.dev or @gmail.com email address.

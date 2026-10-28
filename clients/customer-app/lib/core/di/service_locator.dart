@@ -7,12 +7,12 @@ import 'package:quickeats_customer/viewmodels/settings_viewmodel.dart';
 import 'package:quickeats_customer/services/auth_service.dart';
 import 'package:quickeats_customer/services/shop_service.dart';
 import 'package:quickeats_customer/services/order_service.dart';
-import 'package:quickeats_customer/services/wallet_service.dart';
+import 'package:quickeats_customer/services/card_service.dart';
 import 'package:quickeats_customer/viewmodels/auth_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/shops_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/cart_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/order_viewmodel.dart';
-import 'package:quickeats_customer/viewmodels/wallet_viewmodel.dart';
+import 'package:quickeats_customer/viewmodels/card_viewmodel.dart';
 
 final getIt = GetIt.instance;
 
@@ -24,7 +24,7 @@ Future<void> setupServiceLocator() async {
 
   getIt.registerSingleton<ShopService>(ShopService(apiClient: getIt<ApiClient>()));
   getIt.registerSingleton<OrderService>(OrderService(apiClient: getIt<ApiClient>()));
-  getIt.registerSingleton<WalletService>(WalletService(apiClient: getIt<ApiClient>()));
+  getIt.registerSingleton<CardService>(CardService(apiClient: getIt<ApiClient>()));
   getIt.registerSingleton<AccountService>(AccountService(apiClient: getIt<ApiClient>()));
 
   // Live order updates: connects on login, disconnects on logout
@@ -37,7 +37,7 @@ Future<void> setupServiceLocator() async {
   getIt.registerSingleton<CartViewModel>(CartViewModel()); // singleton — persists across screens
   getIt.registerFactory<OrderViewModel>(() => OrderViewModel(
         orderService: getIt<OrderService>(), notifications: getIt<OrderNotificationService>()));
-  getIt.registerFactory<WalletViewModel>(() => WalletViewModel(walletService: getIt<WalletService>()));
+  getIt.registerFactory<CardViewModel>(() => CardViewModel(cardService: getIt<CardService>()));
   getIt.registerFactory<SettingsViewModel>(() => SettingsViewModel(
         accountService: getIt<AccountService>(), notifications: getIt<OrderNotificationService>()));
 }

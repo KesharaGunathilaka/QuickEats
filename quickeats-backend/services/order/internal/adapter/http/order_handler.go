@@ -2,6 +2,7 @@ package http
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -17,10 +18,11 @@ type OrderHandler struct {
 	orderStatusUC *app.OrderStatusUseCase
 	orderRepo     port.OrderRepository
 	catalog       port.CatalogClient
+	payment       port.PaymentClient
 }
 
-func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderStatusUC *app.OrderStatusUseCase, orderRepo port.OrderRepository, catalog port.CatalogClient) *OrderHandler {
-	return &OrderHandler{placeOrderUC: placeOrderUC, orderStatusUC: orderStatusUC, orderRepo: orderRepo, catalog: catalog}
+func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderStatusUC *app.OrderStatusUseCase, orderRepo port.OrderRepository, catalog port.CatalogClient, payment port.PaymentClient) *OrderHandler {
+	return &OrderHandler{placeOrderUC: placeOrderUC, orderStatusUC: orderStatusUC, orderRepo: orderRepo, catalog: catalog, payment: payment}
 }
 
 type PlaceOrderHTTPRequest struct {
@@ -77,12 +79,36 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Card is the only payment method.
+	if req.PaymentMethod == "" {
+		req.PaymentMethod = "card"
+	}
+	if req.PaymentMethod != "card" {
+		httputil.RespondError(w, httputil.ErrBusinessRule("UNSUPPORTED_PAYMENT_METHOD", "pay with a card"))
+		return
+	}
+
 	var items []domain.OrderItem
+	var total int64
 	for _, dto := range req.Items {
 		items = append(items, domain.OrderItem{
 			MenuItemID: dto.MenuItemID, ItemName: dto.ItemName,
 			Quantity: dto.Quantity, UnitPrice: dto.UnitPrice,
 		})
+		total += int64(dto.Quantity) * dto.UnitPrice
+	}
+
+	// Refuse up front when the card can't pay, so the customer gets a clear answer
+	// instead of an order that is cancelled a moment later. If the payment service
+	// can't be asked, carry on: the saga still declines the charge and cancels.
+	if check, err := h.payment.CheckCard(r.Context(), claims.UserID, total); err != nil {
+		slog.Warn("card check unavailable, placing order anyway", "error", err)
+	} else if !check.HasCard {
+		httputil.RespondError(w, httputil.ErrBusinessRule("NO_CARD", "add a card to place your order"))
+		return
+	} else if !check.Sufficient {
+		httputil.RespondError(w, httputil.ErrBusinessRule("INSUFFICIENT_FUNDS", "your card doesn't have enough balance for this order"))
+		return
 	}
 
 	order, err := h.placeOrderUC.Execute(r.Context(), app.PlaceOrderRequest{
@@ -179,11 +205,12 @@ func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cancel also releases the reserved stock. In production: also trigger a refund via events
+	// Cancel also releases the reserved stock and refunds the card.
 	if err := h.orderStatusUC.Cancel(r.Context(), order, oldStatus, "cancelled_by_customer"); err != nil {
 		respondStatusError(w, err)
 		return
 	}
+	order.CancelReason = "cancelled_by_customer"
 	httputil.RespondJSON(w, http.StatusOK, order)
 }
 

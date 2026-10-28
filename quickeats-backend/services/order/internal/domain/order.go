@@ -22,6 +22,7 @@ type Order struct {
 	Items                 []OrderItem `json:"items"`
 	PaymentMethod         string      `json:"paymentMethod"`
 	RejectReason          string      `json:"rejectReason,omitempty"`
+	CancelReason          string      `json:"cancelReason,omitempty"` // e.g. insufficient_funds, no_card, payment_timeout
 	CreatedAt             time.Time   `json:"createdAt"`
 	UpdatedAt             time.Time   `json:"updatedAt"`
 }

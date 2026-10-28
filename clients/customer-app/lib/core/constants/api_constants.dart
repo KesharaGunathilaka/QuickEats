@@ -34,9 +34,9 @@ class ApiConstants {
   static String orderById(String id) => '/api/v1/orders/$id';
   static String cancelOrder(String id) => '/api/v1/orders/$id/cancel';
 
-  // Wallet
-  static const String wallet = '/api/v1/wallet';
-  static const String walletTopup = '/api/v1/wallet/topup';
+  // Payment card (the only payment method)
+  static const String myCard = '/api/v1/cards/me';
+  static const String myCardCheck = '/api/v1/cards/me/check';
 
   // Payments
   static const String paymentHistory = '/api/v1/payments/history';

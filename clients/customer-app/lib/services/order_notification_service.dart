@@ -139,6 +139,8 @@ class OrderNotificationService {
     if (update.status == OrderStatus.confirmed && (update.pickupCode ?? '').isNotEmpty) {
       body = '$body Pickup code: ${update.pickupCode}';
     }
+    if (update.reason == 'insufficient_funds') body = "Payment declined: your card doesn't have enough balance. You weren't charged.";
+    if (update.reason == 'no_card') body = 'Add a payment card to place orders.';
     try {
       await _plugin.show(
         // One notification per order: a newer status replaces the older one.

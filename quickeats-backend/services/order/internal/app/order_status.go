@@ -17,10 +17,11 @@ import (
 type OrderStatusUseCase struct {
 	db            *pgxpool.Pool
 	catalogClient port.CatalogClient
+	paymentClient port.PaymentClient
 }
 
-func NewOrderStatusUseCase(db *pgxpool.Pool, catalogClient port.CatalogClient) *OrderStatusUseCase {
-	return &OrderStatusUseCase{db: db, catalogClient: catalogClient}
+func NewOrderStatusUseCase(db *pgxpool.Pool, catalogClient port.CatalogClient, paymentClient port.PaymentClient) *OrderStatusUseCase {
+	return &OrderStatusUseCase{db: db, catalogClient: catalogClient, paymentClient: paymentClient}
 }
 
 // UpdateStatus moves an order along the shop workflow (ACCEPTED, then PICKED_UP).
@@ -34,7 +35,8 @@ func (uc *OrderStatusUseCase) UpdateStatus(ctx context.Context, order *domain.Or
 		}))
 }
 
-// Reject records the shop's rejection and its reason, and returns the order's stock.
+// Reject records the shop's rejection and its reason, returns the order's stock and
+// refunds the customer's card.
 func (uc *OrderStatusUseCase) Reject(ctx context.Context, order *domain.Order, oldStatus domain.OrderStatus, reason string) error {
 	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, reject_reason=$2, updated_at=now() WHERE id=$3 AND status=$4`,
 		[]any{order.Status, reason, order.ID, oldStatus},
@@ -46,13 +48,15 @@ func (uc *OrderStatusUseCase) Reject(ctx context.Context, order *domain.Order, o
 		return err
 	}
 	uc.releaseStock(ctx, order.ID)
+	uc.refund(ctx, order)
 	return nil
 }
 
-// Cancel records a cancellation requested by the customer, and returns the order's stock.
+// Cancel records a cancellation requested by the customer, returns the order's stock
+// and refunds the customer's card.
 func (uc *OrderStatusUseCase) Cancel(ctx context.Context, order *domain.Order, oldStatus domain.OrderStatus, reason string) error {
-	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2 AND status=$3`,
-		[]any{order.Status, order.ID, oldStatus},
+	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, cancel_reason=$4, updated_at=now() WHERE id=$2 AND status=$3`,
+		[]any{order.Status, order.ID, oldStatus, reason},
 		events.NewEvent("order.order.cancelled", "order", order.ID, domain.OrderCancelledPayload{
 			OrderID: order.ID, CustomerID: order.CustomerID, ShopID: order.ShopID,
 			Reason: reason, TotalAmount: order.TotalAmount, Currency: order.Currency,
@@ -61,6 +65,7 @@ func (uc *OrderStatusUseCase) Cancel(ctx context.Context, order *domain.Order, o
 		return err
 	}
 	uc.releaseStock(ctx, order.ID)
+	uc.refund(ctx, order)
 	return nil
 }
 
@@ -69,6 +74,15 @@ func (uc *OrderStatusUseCase) Cancel(ctx context.Context, order *domain.Order, o
 func (uc *OrderStatusUseCase) releaseStock(ctx context.Context, orderID string) {
 	if err := uc.catalogClient.ReleaseStock(ctx, orderID, nil); err != nil {
 		slog.Error("stock release failed", "order_id", orderID, "error", err)
+	}
+}
+
+// refund returns the payment to the customer's card. The payment service ignores
+// orders that were never charged, so it is safe for unpaid orders too. Like the stock
+// release, a failure is logged rather than failing the already-committed change.
+func (uc *OrderStatusUseCase) refund(ctx context.Context, order *domain.Order) {
+	if err := uc.paymentClient.RefundOrder(ctx, order.ID, order.CustomerID); err != nil {
+		slog.Error("refund failed", "order_id", order.ID, "error", err)
 	}
 }
 

@@ -2,7 +2,9 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -10,10 +12,9 @@ import (
 	"github.com/quickeats/pkg/middleware"
 	"github.com/quickeats/services/payment/internal/app"
 	"github.com/quickeats/services/payment/internal/domain"
-	"github.com/quickeats/services/payment/internal/port"
 )
 
-func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepository, walletRepo port.WalletRepository, jwtSecret string) *chi.Mux {
+func NewRouter(paymentUC *app.CreatePaymentUseCase, cardUC *app.CardUseCase, jwtSecret string) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(middleware.RequestID)
@@ -24,7 +25,7 @@ func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepo
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "payment"})
 	})
 
-	// Internal (service-to-service)
+	// Internal (service-to-service; Kong does not route /internal)
 	r.Post("/internal/payments/intent", func(w http.ResponseWriter, r *http.Request) {
 		var req app.CreateIntentRequest
 		if err := httputil.DecodeJSON(r, &req); err != nil {
@@ -33,74 +34,115 @@ func NewRouter(paymentUC *app.CreatePaymentUseCase, paymentRepo port.PaymentRepo
 		}
 		resp, err := paymentUC.Execute(r.Context(), req)
 		if err != nil {
-			httputil.RespondError(w, err)
+			httputil.RespondError(w, paymentError(err))
 			return
 		}
 		httputil.RespondJSON(w, http.StatusCreated, resp)
 	})
 
-	r.Post("/internal/payments/{paymentId}/refund", func(w http.ResponseWriter, r *http.Request) {
-		// Refund implementation
-		httputil.RespondJSON(w, http.StatusOK, map[string]string{"status": "PROCESSING"})
+	// Refunds the order's payment to the customer's card (no-op if it was never charged).
+	r.Post("/internal/payments/refund", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			OrderID    string `json:"orderId"`
+			CustomerID string `json:"customerId"`
+		}
+		if err := httputil.DecodeJSON(r, &req); err != nil {
+			httputil.RespondError(w, err)
+			return
+		}
+		refunded, err := paymentUC.RefundOrder(r.Context(), req.OrderID, req.CustomerID)
+		if err != nil {
+			httputil.RespondError(w, err)
+			return
+		}
+		httputil.RespondJSON(w, http.StatusOK, map[string]bool{"refunded": refunded})
 	})
 
-	// Webhook (from payment gateway)
-	r.Post("/api/v1/payments/webhook", func(w http.ResponseWriter, r *http.Request) {
-		// Parse gateway webhook, verify signature, update payment status
-		// This would call paymentUC.completePayment or publishPaymentFailed
-		w.WriteHeader(http.StatusOK)
+	// Lets the order service refuse an order up front when the customer can't pay.
+	r.Get("/internal/cards/{userId}/check", func(w http.ResponseWriter, r *http.Request) {
+		respondPayCheck(w, r, cardUC, chi.URLParam(r, "userId"))
 	})
 
 	// Customer routes
-	r.Route("/api/v1", func(r chi.Router) {
+	r.Route("/api/v1/cards", func(r chi.Router) {
 		r.Use(middleware.Auth(jwtSecret))
 
-		r.Get("/wallet", func(w http.ResponseWriter, r *http.Request) {
-			claims := middleware.GetClaims(r.Context())
-			wallet, err := getOrCreateWallet(r, walletRepo, claims.UserID)
+		// The customer's saved card, or null. The demo balance is never included.
+		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
+			card, err := cardUC.GetCard(r.Context(), middleware.GetClaims(r.Context()).UserID)
 			if err != nil {
-				httputil.RespondError(w, httputil.ErrNotFound("wallet"))
-				return
-			}
-			httputil.RespondJSON(w, http.StatusOK, wallet)
-		})
-
-		r.Post("/wallet/topup", func(w http.ResponseWriter, r *http.Request) {
-			claims := middleware.GetClaims(r.Context())
-			var req struct{ Amount int64 `json:"amount"` }
-			if err := httputil.DecodeJSON(r, &req); err != nil || req.Amount <= 0 {
-				httputil.RespondError(w, httputil.ErrValidation("amount must be a positive number of cents", nil))
-				return
-			}
-			if _, err := getOrCreateWallet(r, walletRepo, claims.UserID); err != nil {
 				httputil.RespondError(w, err)
 				return
 			}
-			walletRepo.Credit(r.Context(), claims.UserID, req.Amount)
-			httputil.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			httputil.RespondJSON(w, http.StatusOK, card)
 		})
 
-		r.Get("/payments/history", func(w http.ResponseWriter, r *http.Request) {
-			// List payments by customer
-			httputil.RespondJSON(w, http.StatusOK, []interface{}{})
+		// Adds a card, replacing the current one.
+		r.Put("/me", func(w http.ResponseWriter, r *http.Request) {
+			var req app.AddCardRequest
+			if err := httputil.DecodeJSON(r, &req); err != nil {
+				httputil.RespondError(w, err)
+				return
+			}
+			card, err := cardUC.AddCard(r.Context(), middleware.GetClaims(r.Context()).UserID, req)
+			var verr *domain.CardValidationError
+			if errors.As(err, &verr) {
+				httputil.RespondError(w, httputil.ErrValidation(verr.Message, map[string]string{"field": verr.Field}))
+				return
+			}
+			if err != nil {
+				httputil.RespondError(w, err)
+				return
+			}
+			httputil.RespondJSON(w, http.StatusOK, card)
+		})
+
+		r.Delete("/me", func(w http.ResponseWriter, r *http.Request) {
+			if err := cardUC.RemoveCard(r.Context(), middleware.GetClaims(r.Context()).UserID); err != nil {
+				httputil.RespondError(w, err)
+				return
+			}
+			httputil.RespondNoContent(w)
+		})
+
+		// Whether the saved card can pay ?amount= (cents), without revealing the balance.
+		r.Get("/me/check", func(w http.ResponseWriter, r *http.Request) {
+			respondPayCheck(w, r, cardUC, middleware.GetClaims(r.Context()).UserID)
 		})
 	})
 
 	return r
 }
 
-// getOrCreateWallet lazily creates an empty wallet the first time a customer uses it.
-func getOrCreateWallet(r *http.Request, walletRepo port.WalletRepository, userID string) (*domain.Wallet, error) {
-	wallet, err := walletRepo.GetByUserID(r.Context(), userID)
+func respondPayCheck(w http.ResponseWriter, r *http.Request, cardUC *app.CardUseCase, userID string) {
+	amount, err := strconv.ParseInt(r.URL.Query().Get("amount"), 10, 64)
+	if err != nil || amount < 0 {
+		httputil.RespondError(w, httputil.ErrValidation("amount must be a whole number of cents", nil))
+		return
+	}
+	check, err := cardUC.CanPay(r.Context(), userID, amount)
 	if err != nil {
-		return nil, err
+		httputil.RespondError(w, err)
+		return
 	}
-	if wallet != nil {
-		return wallet, nil
+	httputil.RespondJSON(w, http.StatusOK, check)
+}
+
+// paymentError turns a declined charge into a 422 the order service can read the
+// reason from (error.details.reason).
+func paymentError(err error) error {
+	var declined *app.DeclinedError
+	if !errors.As(err, &declined) {
+		return err
 	}
-	wallet = domain.NewWallet(userID)
-	if err := walletRepo.Create(r.Context(), wallet); err != nil {
-		return nil, err
+	code, msg := "PAYMENT_DECLINED", "the payment was declined"
+	switch declined.Reason {
+	case domain.FailureNoCard:
+		code, msg = "NO_CARD", "add a card to pay for your order"
+	case domain.FailureInsufficientFunds:
+		code, msg = "INSUFFICIENT_FUNDS", "your card doesn't have enough balance for this order"
 	}
-	return wallet, nil
+	appErr := httputil.ErrBusinessRule(code, msg)
+	appErr.Details = map[string]string{"reason": declined.Reason}
+	return appErr
 }
