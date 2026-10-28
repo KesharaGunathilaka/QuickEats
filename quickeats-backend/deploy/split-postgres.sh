@@ -46,4 +46,16 @@ done
 
 echo "==> Starting services"
 dc start $SERVICES
+
+# Catalog only fills in missing Redis stock counters at startup, so counters written
+# from the seed data would survive the copy. Clear them and let catalog reload them
+# from the restored menu_items.
+echo "==> Reloading stock counters"
+dc exec -T redis sh -c "redis-cli --scan --pattern 'stock:*' | xargs -r redis-cli del" >/dev/null
+dc restart catalog
+
+# Restarted containers can get new IPs, but Kong keeps the old ones cached and answers
+# 502 for those routes. Restarting it makes it resolve the services again.
+echo "==> Restarting Kong"
+dc restart kong
 echo "Done. Check the app, then remove the old volume: docker volume rm $OLD_VOLUME"
