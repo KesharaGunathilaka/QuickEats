@@ -1,8 +1,8 @@
 package http
 
 import (
+	"errors"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/quickeats/pkg/httputil"
@@ -156,35 +156,32 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.orderStatusUC.UpdateStatus(r.Context(), order, oldStatus); err != nil {
-		httputil.RespondError(w, err)
+		respondStatusError(w, err)
 		return
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, order)
 }
 
+// CancelOrder lets the customer cancel their order until the shop accepts it.
 func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	id := chi.URLParam(r, "id")
 	order, err := h.orderRepo.GetByID(r.Context(), id)
-	if err != nil || order == nil {
+	if err != nil || order == nil || order.CustomerID != claims.UserID {
 		httputil.RespondError(w, httputil.ErrNotFound("order"))
 		return
 	}
 
-	// Check cancellation window
-	if order.CancellationDeadline != nil && time.Now().After(*order.CancellationDeadline) {
-		httputil.RespondError(w, httputil.ErrBusinessRule("CANCELLATION_EXPIRED", "cancellation window has expired"))
-		return
-	}
-
+	oldStatus := order.Status
 	if err := order.TransitionTo(domain.StatusCancelled); err != nil {
-		httputil.RespondError(w, httputil.ErrBusinessRule("INVALID_STATUS_TRANSITION", err.Error()))
+		httputil.RespondError(w, httputil.ErrBusinessRule("CANNOT_CANCEL", "the shop has already accepted this order, it can no longer be cancelled"))
 		return
 	}
 
 	// Cancel also releases the reserved stock. In production: also trigger a refund via events
-	if err := h.orderStatusUC.Cancel(r.Context(), order, "cancelled_by_customer"); err != nil {
-		httputil.RespondError(w, err)
+	if err := h.orderStatusUC.Cancel(r.Context(), order, oldStatus, "cancelled_by_customer"); err != nil {
+		respondStatusError(w, err)
 		return
 	}
 	httputil.RespondJSON(w, http.StatusOK, order)
@@ -204,15 +201,26 @@ func (h *OrderHandler) RejectOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldStatus := order.Status
 	if err := order.TransitionTo(domain.StatusRejected); err != nil {
-		httputil.RespondError(w, httputil.ErrBusinessRule("INVALID_STATUS_TRANSITION", err.Error()))
+		httputil.RespondError(w, httputil.ErrBusinessRule("CANNOT_REJECT", "only orders waiting for acceptance can be rejected"))
 		return
 	}
 
-	if err := h.orderStatusUC.Reject(r.Context(), order, req.Reason); err != nil {
-		httputil.RespondError(w, err)
+	if err := h.orderStatusUC.Reject(r.Context(), order, oldStatus, req.Reason); err != nil {
+		respondStatusError(w, err)
 		return
 	}
 	order.RejectReason = req.Reason
 	httputil.RespondJSON(w, http.StatusOK, order)
+}
+
+// respondStatusError reports a lost race (another request changed the order first)
+// as a conflict, and anything else as is.
+func respondStatusError(w http.ResponseWriter, err error) {
+	if errors.Is(err, domain.ErrStatusChanged) {
+		httputil.RespondError(w, httputil.ErrConflict(err.Error()))
+		return
+	}
+	httputil.RespondError(w, err)
 }

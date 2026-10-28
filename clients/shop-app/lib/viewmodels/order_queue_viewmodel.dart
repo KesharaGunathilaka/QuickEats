@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:quickeats_shop/core/constants/order_status.dart';
 import 'package:quickeats_shop/core/network/ws_client.dart';
 import 'package:quickeats_shop/models/order.dart';
+import 'package:quickeats_shop/services/account_service.dart';
 import 'package:quickeats_shop/services/auth_service.dart';
 import 'package:quickeats_shop/services/order_service.dart';
 
@@ -23,7 +24,7 @@ class OrderQueueViewModel extends ChangeNotifier {
   String? _error;
   OrderStatus _filterStatus = OrderStatus.confirmed;
 
-  List<Order> get orders => _orders.where((o) => o.status == _filterStatus).toList();
+  List<Order> get orders => _orders.where((o) => o.status.queueTab == _filterStatus).toList();
   List<Order> get allOrders => _orders;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -32,9 +33,7 @@ class OrderQueueViewModel extends ChangeNotifier {
   /// One-off messages for the screen to show (e.g. a customer cancelled an order).
   Stream<String> get notices => _notices.stream;
 
-  int get confirmedCount => _orders.where((o) => o.status == OrderStatus.confirmed).length;
-  int get preparingCount => _orders.where((o) => o.status == OrderStatus.preparing || o.status == OrderStatus.accepted).length;
-  int get readyCount => _orders.where((o) => o.status == OrderStatus.ready).length;
+  int countFor(OrderStatus tab) => _orders.where((o) => o.status.queueTab == tab).length;
 
   Future<void> init() async {
     await loadOrders();
@@ -77,7 +76,9 @@ class OrderQueueViewModel extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _error = 'Failed to update status: $e';
+      final message = apiErrorMessage(e, 'Failed to update the order');
+      await loadOrders(); // the customer may have cancelled it meanwhile
+      _error = message;
       notifyListeners();
       return false;
     }
@@ -93,7 +94,9 @@ class OrderQueueViewModel extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _error = 'Failed to reject order: $e';
+      final message = apiErrorMessage(e, 'Failed to reject the order');
+      await loadOrders(); // the customer may have cancelled it meanwhile
+      _error = message;
       notifyListeners();
       return false;
     }

@@ -23,11 +23,11 @@ func NewOrderStatusUseCase(db *pgxpool.Pool, catalogClient port.CatalogClient) *
 	return &OrderStatusUseCase{db: db, catalogClient: catalogClient}
 }
 
-// UpdateStatus moves an order along the shop workflow (ACCEPTED, PREPARING, READY, PICKED_UP).
-// The order must already have been transitioned in memory.
+// UpdateStatus moves an order along the shop workflow (ACCEPTED, then PICKED_UP).
+// The order must already have been transitioned in memory from oldStatus.
 func (uc *OrderStatusUseCase) UpdateStatus(ctx context.Context, order *domain.Order, oldStatus domain.OrderStatus) error {
-	return uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2`,
-		[]any{order.Status, order.ID},
+	return uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2 AND status=$3`,
+		[]any{order.Status, order.ID, oldStatus},
 		events.NewEvent("order.order.status_changed", "order", order.ID, domain.OrderStatusChangedPayload{
 			OrderID: order.ID, ShopID: order.ShopID, CustomerID: order.CustomerID,
 			OldStatus: string(oldStatus), NewStatus: string(order.Status),
@@ -35,9 +35,9 @@ func (uc *OrderStatusUseCase) UpdateStatus(ctx context.Context, order *domain.Or
 }
 
 // Reject records the shop's rejection and its reason, and returns the order's stock.
-func (uc *OrderStatusUseCase) Reject(ctx context.Context, order *domain.Order, reason string) error {
-	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, reject_reason=$2, updated_at=now() WHERE id=$3`,
-		[]any{order.Status, reason, order.ID},
+func (uc *OrderStatusUseCase) Reject(ctx context.Context, order *domain.Order, oldStatus domain.OrderStatus, reason string) error {
+	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, reject_reason=$2, updated_at=now() WHERE id=$3 AND status=$4`,
+		[]any{order.Status, reason, order.ID, oldStatus},
 		events.NewEvent("order.order.rejected", "order", order.ID, domain.OrderCancelledPayload{
 			OrderID: order.ID, CustomerID: order.CustomerID, ShopID: order.ShopID,
 			Reason: reason, TotalAmount: order.TotalAmount, Currency: order.Currency,
@@ -50,9 +50,9 @@ func (uc *OrderStatusUseCase) Reject(ctx context.Context, order *domain.Order, r
 }
 
 // Cancel records a cancellation requested by the customer, and returns the order's stock.
-func (uc *OrderStatusUseCase) Cancel(ctx context.Context, order *domain.Order, reason string) error {
-	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2`,
-		[]any{order.Status, order.ID},
+func (uc *OrderStatusUseCase) Cancel(ctx context.Context, order *domain.Order, oldStatus domain.OrderStatus, reason string) error {
+	err := uc.saveWithEvent(ctx, order, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2 AND status=$3`,
+		[]any{order.Status, order.ID, oldStatus},
 		events.NewEvent("order.order.cancelled", "order", order.ID, domain.OrderCancelledPayload{
 			OrderID: order.ID, CustomerID: order.CustomerID, ShopID: order.ShopID,
 			Reason: reason, TotalAmount: order.TotalAmount, Currency: order.Currency,
@@ -73,6 +73,8 @@ func (uc *OrderStatusUseCase) releaseStock(ctx context.Context, orderID string) 
 }
 
 // saveWithEvent writes the status change and its event in one transaction (outbox pattern).
+// The query must be conditional on the order's previous status; if no row matches,
+// someone else changed the order first and ErrStatusChanged is returned.
 func (uc *OrderStatusUseCase) saveWithEvent(ctx context.Context, order *domain.Order, query string, args []any, event events.Event) error {
 	tx, err := uc.db.Begin(ctx)
 	if err != nil {
@@ -80,8 +82,12 @@ func (uc *OrderStatusUseCase) saveWithEvent(ctx context.Context, order *domain.O
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
+	tag, err := tx.Exec(ctx, query, args...)
+	if err != nil {
 		return fmt.Errorf("update order %s: %w", order.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrStatusChanged
 	}
 	if err := outbox.WriteToOutbox(ctx, tx, event); err != nil {
 		return err

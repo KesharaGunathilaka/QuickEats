@@ -139,13 +139,13 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   void _confirmDelete(MenuViewModel vm, models.MenuItem item) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Item'),
         content: Text('Remove "${item.name}" from your menu?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           FilledButton(
-            onPressed: () { vm.deleteItem(item.id); Navigator.pop(context); },
+            onPressed: () { vm.deleteItem(item.id); Navigator.pop(dialogContext); },
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
