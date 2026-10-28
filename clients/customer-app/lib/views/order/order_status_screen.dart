@@ -72,12 +72,18 @@ class _OrderStatusScreenState extends State<OrderStatusScreen> {
           // Cancel button
           if (order.status.canCancel) SizedBox(height: 48, child: OutlinedButton(
             onPressed: () async {
-              final confirm = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+              // Pop with the dialog's own context: the screen's context belongs to the
+              // shell's nested navigator, so popping it would close the screen, not the dialog.
+              final confirm = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
                 title: const Text('Cancel Order?'), content: const Text('Are you sure? Your payment will be refunded.'),
-                actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep Order')),
-                  FilledButton(onPressed: () => Navigator.pop(context, true), style: FilledButton.styleFrom(backgroundColor: AppColors.error), child: const Text('Cancel Order'))],
+                actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Keep Order')),
+                  FilledButton(onPressed: () => Navigator.pop(dialogContext, true), style: FilledButton.styleFrom(backgroundColor: AppColors.error), child: const Text('Cancel Order'))],
               ));
-              if (confirm == true) vm.cancelOrder(order.id);
+              if (confirm != true || !context.mounted) return;
+              final ok = await vm.cancelOrder(order.id);
+              if (!ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(vm.error ?? 'Could not cancel the order')));
+              }
             },
             style: OutlinedButton.styleFrom(foregroundColor: AppColors.error, side: const BorderSide(color: AppColors.error), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: const Text('Cancel Order', style: TextStyle(fontWeight: FontWeight.w600)),

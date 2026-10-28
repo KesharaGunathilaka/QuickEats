@@ -16,11 +16,15 @@ const (
 	StatusRefunded       OrderStatus = "REFUNDED"
 )
 
+// CONFIRMED means paid and waiting for the shop: the customer may still cancel and the
+// shop may accept or reject. Once ACCEPTED the order can only be completed (picked up).
+// PREPARING and READY are no longer used by the shop app; they stay so older orders
+// in those states can still be completed.
 var validTransitions = map[OrderStatus][]OrderStatus{
 	StatusPendingPayment: {StatusConfirmed, StatusCancelled},
 	StatusConfirmed:      {StatusAccepted, StatusCancelled, StatusRejected},
-	StatusAccepted:       {StatusPreparing, StatusRejected},
-	StatusPreparing:      {StatusReady},
+	StatusAccepted:       {StatusPickedUp},
+	StatusPreparing:      {StatusReady, StatusPickedUp},
 	StatusReady:          {StatusPickedUp},
 	StatusCancelled:      {StatusRefunded},
 	StatusRejected:       {StatusRefunded},

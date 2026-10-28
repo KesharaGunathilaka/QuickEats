@@ -90,7 +90,7 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
   }
 
   Widget _buildStatusTabs(OrderQueueViewModel vm) {
-    final tabs = [OrderStatus.confirmed, OrderStatus.accepted, OrderStatus.preparing, OrderStatus.ready, OrderStatus.pickedUp];
+    final tabs = [OrderStatus.confirmed, OrderStatus.accepted, OrderStatus.pickedUp];
     return Container(
       color: AppColors.white,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -99,7 +99,7 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
         child: Row(
           children: tabs.map((status) {
             final isSelected = vm.filterStatus == status;
-            final count = vm.allOrders.where((o) => o.status == status).length;
+            final count = vm.countFor(status);
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: FilterChip(
@@ -128,11 +128,9 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
       color: AppColors.white,
       child: Row(
         children: [
-          _countChip('New', vm.confirmedCount, AppColors.statusConfirmed),
+          _countChip('New', vm.countFor(OrderStatus.confirmed), AppColors.statusConfirmed),
           const SizedBox(width: 12),
-          _countChip('In Progress', vm.preparingCount, AppColors.statusPreparing),
-          const SizedBox(width: 12),
-          _countChip('Ready', vm.readyCount, AppColors.statusReady),
+          _countChip('In Progress', vm.countFor(OrderStatus.accepted), AppColors.statusPreparing),
         ],
       ),
     );
@@ -151,6 +149,13 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _advance(OrderQueueViewModel vm, Order order) async {
+    final ok = await vm.updateStatus(order.id, order.status.nextShopAction!);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(vm.error ?? 'Failed to update the order')));
+    }
   }
 
   Widget _buildOrderList(OrderQueueViewModel vm) {
@@ -179,7 +184,7 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
             order: order,
             onTap: () => context.push('/orders/${order.id}'),
             onAction: order.status.nextShopAction != null
-              ? () => vm.updateStatus(order.id, order.status.nextShopAction!)
+              ? () => _advance(vm, order)
               : null,
           );
         },

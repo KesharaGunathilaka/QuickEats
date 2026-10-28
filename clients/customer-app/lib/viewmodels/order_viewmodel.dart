@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:quickeats_customer/models/order.dart';
 import 'package:quickeats_customer/models/cart_item.dart';
+import 'package:quickeats_customer/services/account_service.dart';
 import 'package:quickeats_customer/services/order_notification_service.dart';
 import 'package:quickeats_customer/services/order_service.dart';
 import 'package:uuid/uuid.dart';
@@ -58,7 +59,11 @@ class OrderViewModel extends ChangeNotifier {
 
   Future<bool> cancelOrder(String orderId) async {
     try { await _orderService.cancelOrder(orderId); await trackOrder(orderId); return true;
-    } catch (e) { _error = 'Failed to cancel'; notifyListeners(); return false; }
+    } catch (e) {
+      _error = apiErrorMessage(e, 'Failed to cancel');
+      await trackOrder(orderId); // the shop may have accepted it meanwhile
+      return false;
+    }
   }
 
   // Live update from the WebSocket: refresh the tracked order and the history list.

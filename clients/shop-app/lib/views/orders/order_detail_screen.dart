@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:quickeats_shop/core/constants/app_colors.dart';
-import 'package:quickeats_shop/core/constants/order_status.dart';
 import 'package:quickeats_shop/models/order.dart';
 import 'package:quickeats_shop/viewmodels/order_queue_viewmodel.dart';
 
@@ -13,13 +12,7 @@ class OrderDetailScreen extends StatefulWidget {
 }
 
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
-  final _rejectController = TextEditingController();
-
-  @override
-  void dispose() {
-    _rejectController.dispose();
-    super.dispose();
-  }
+  bool _busy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -112,15 +105,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Action buttons
+                // Action buttons: a new order is accepted or rejected; an accepted one
+                // can only be completed.
                 if (order.status.nextShopAction != null)
                   SizedBox(
                     height: 50,
                     child: FilledButton(
-                      onPressed: () async {
-                        final success = await vm.updateStatus(order.id, order.status.nextShopAction!);
-                        if (success && mounted) setState(() {});
-                      },
+                      onPressed: _busy ? null : () => _advance(vm, order),
                       style: FilledButton.styleFrom(
                         backgroundColor: statusColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -129,13 +120,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     ),
                   ),
 
-                if (order.status == OrderStatus.confirmed || order.status == OrderStatus.accepted)
+                if (order.status.canReject)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: SizedBox(
                       height: 50,
                       child: OutlinedButton(
-                        onPressed: () => _showRejectDialog(context, vm, order),
+                        onPressed: _busy ? null : () => _reject(vm, order),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.error,
                           side: BorderSide(color: AppColors.error),
@@ -153,30 +144,67 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  void _showRejectDialog(BuildContext context, OrderQueueViewModel vm, Order order) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Reject Order'),
-        content: TextField(
-          controller: _rejectController,
-          decoration: const InputDecoration(hintText: 'Reason for rejection', border: OutlineInputBorder()),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              if (_rejectController.text.trim().isEmpty) return;
-              await vm.rejectOrder(order.id, _rejectController.text.trim());
-              if (context.mounted) Navigator.pop(context);
-              _rejectController.clear();
-            },
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Reject'),
-          ),
-        ],
+  Future<void> _advance(OrderQueueViewModel vm, Order order) async {
+    setState(() => _busy = true);
+    final ok = await vm.updateStatus(order.id, order.status.nextShopAction!);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) _showError(vm.error ?? 'Failed to update the order');
+  }
+
+  Future<void> _reject(OrderQueueViewModel vm, Order order) async {
+    final reason = await showDialog<String>(context: context, builder: (_) => const _RejectDialog());
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    final ok = await vm.rejectOrder(order.id, reason);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) _showError(vm.error ?? 'Failed to reject the order');
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// Asks for a rejection reason; pops with the trimmed reason, or null when cancelled.
+/// It pops with its own context: the detail screen's context belongs to the shell's
+/// nested navigator, so popping that would close the screen and leave the dialog open.
+class _RejectDialog extends StatefulWidget {
+  const _RejectDialog();
+  @override
+  State<_RejectDialog> createState() => _RejectDialogState();
+}
+
+class _RejectDialogState extends State<_RejectDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = _reason.text.trim();
+    return AlertDialog(
+      title: const Text('Reject Order'),
+      content: TextField(
+        controller: _reason,
+        autofocus: true,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(hintText: 'Reason for rejection', border: OutlineInputBorder()),
+        maxLines: 3,
       ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: reason.isEmpty ? null : () => Navigator.pop(context, reason),
+          style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+          child: const Text('Reject'),
+        ),
+      ],
     );
   }
 }
