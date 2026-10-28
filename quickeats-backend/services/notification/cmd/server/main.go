@@ -29,7 +29,8 @@ func main() {
 
 	consumer.Subscribe("order.order.confirmed", "notification-svc", notifService.HandleOrderConfirmed)
 	consumer.Subscribe("order.order.cancelled", "notification-svc", notifService.HandleOrderCancelled)
-	consumer.Subscribe("order.order.rejected", "notification-svc", notifService.HandleOrderCancelled)
+	consumer.Subscribe("order.order.rejected", "notification-svc", notifService.HandleOrderRejected)
+	consumer.Subscribe("order.order.status_changed", "notification-svc", notifService.HandleOrderStatusChanged)
 
 	// HTTP health check
 	httpRouter := chi.NewRouter()

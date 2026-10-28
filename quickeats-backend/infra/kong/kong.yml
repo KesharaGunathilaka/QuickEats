@@ -8,7 +8,19 @@ services:
         paths: ["/api/v1/auth"]
         strip_path: false
       - name: identity-admin
-        paths: ["/api/v1/admin/organisations"]
+        paths: ["/api/v1/admin"]
+        strip_path: false
+      # Public organisation-code lookup (sign-up) and the user's own profile (settings)
+      - name: identity-organisations
+        paths: ["/api/v1/organisations", "/api/v1/users"]
+        strip_path: false
+
+  # React admin dashboard (static files served by nginx under /admin)
+  - name: admin-dashboard
+    url: http://admin:80
+    routes:
+      - name: admin-dashboard
+        paths: ["/admin"]
         strip_path: false
 
   - name: catalog-service

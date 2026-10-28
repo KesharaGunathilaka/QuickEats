@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/quickeats/services/identity/internal/domain"
 	"github.com/quickeats/services/identity/internal/port"
@@ -26,56 +27,78 @@ func NewRegisterUseCase(userRepo port.UserRepository, orgRepo port.OrganisationR
 	return &RegisterUseCase{userRepo: userRepo, orgRepo: orgRepo}
 }
 
+// Execute signs up a customer. The organisation code must exist and the email must be
+// on one of the organisation's email domains, which is what ties a customer to it.
 func (uc *RegisterUseCase) Execute(ctx context.Context, req RegisterRequest) (*domain.User, error) {
-	user, err := prepareUser(ctx, uc.userRepo, uc.orgRepo, req, domain.RoleCustomer)
+	org, err := findOrg(ctx, uc.orgRepo, req.OrganisationSlug)
 	if err != nil {
 		return nil, err
 	}
+	if err := verifyMember(org, req); err != nil {
+		return nil, err
+	}
 
+	user, err := newAccount(ctx, uc.userRepo, req.Email, req.Password, req.DisplayName, org.ID, domain.RoleCustomer)
+	if err != nil {
+		return nil, err
+	}
 	if err := uc.userRepo.Create(ctx, user); err != nil {
 		return nil, err
 	}
-
 	return user, nil
 }
 
-// prepareUser runs the checks shared by every sign-up flow (organisation exists,
-// email is eligible for it, email is unused) and builds the user with a hashed password.
-func prepareUser(ctx context.Context, userRepo port.UserRepository, orgRepo port.OrganisationRepository, req RegisterRequest, role domain.Role) (*domain.User, error) {
-	// 1. Find organisation
-	org, err := orgRepo.GetBySlug(ctx, req.OrganisationSlug)
-	if err != nil || org == nil {
-		return nil, domain.ErrOrgNotFound
-	}
-
-	// 2. Verify eligibility
-	verifier, err := domain.ResolveVerifier(org.VerifyMethod)
+// findOrg looks up an organisation by its code, case-insensitively.
+func findOrg(ctx context.Context, orgRepo port.OrganisationRepository, slug string) (*domain.Organisation, error) {
+	s := strings.ToLower(strings.TrimSpace(slug))
+	org, err := orgRepo.GetBySlug(ctx, s)
 	if err != nil {
-		return nil, fmt.Errorf("resolve verifier: %w", err)
+		return nil, err
+	}
+	if org == nil {
+		return nil, &domain.UnknownOrgError{Slug: s}
+	}
+	return org, nil
+}
+
+// verifyMember checks a customer is eligible for the organisation.
+func verifyMember(org *domain.Organisation, req RegisterRequest) error {
+	if _, err := domain.EmailDomain(req.Email); err != nil {
+		return domain.ErrInvalidEmail
 	}
 
-	// For invite code, inject the code into config for verification
-	config := org.VerifyConfig
 	if org.VerifyMethod == domain.VerifyInviteCode {
-		codes, _ := config["codes"].([]interface{})
-		found := false
+		codes, _ := org.VerifyConfig["codes"].([]interface{})
 		for _, c := range codes {
 			if c == req.InviteCode {
-				found = true
-				break
+				return nil
 			}
 		}
-		if !found {
-			return nil, domain.ErrVerificationFailed
-		}
+		return domain.ErrVerificationFailed
 	}
 
-	if err := verifier.Verify(req.Email, config); err != nil {
-		return nil, domain.ErrVerificationFailed
+	verifier, err := domain.ResolveVerifier(org.VerifyMethod)
+	if err != nil {
+		return fmt.Errorf("resolve verifier: %w", err)
+	}
+	if err := verifier.Verify(req.Email, org.VerifyConfig); err != nil {
+		return &domain.EmailNotAllowedError{OrgName: org.Name, Domains: org.EmailDomains()}
+	}
+	return nil
+}
+
+// newAccount runs the checks every sign-up shares (valid unused email, password
+// length) and builds the user with a hashed password.
+func newAccount(ctx context.Context, userRepo port.UserRepository, email, password, displayName, orgID string, role domain.Role) (*domain.User, error) {
+	email = strings.TrimSpace(email)
+	if _, err := domain.EmailDomain(email); err != nil {
+		return nil, domain.ErrInvalidEmail
+	}
+	if len(password) < 6 {
+		return nil, domain.ErrWeakPassword
 	}
 
-	// 3. Check uniqueness
-	exists, err := userRepo.ExistsByEmail(ctx, req.Email)
+	exists, err := userRepo.ExistsByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
@@ -83,13 +106,12 @@ func prepareUser(ctx context.Context, userRepo port.UserRepository, orgRepo port
 		return nil, domain.ErrUserAlreadyExists
 	}
 
-	// 4. Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	user := domain.NewUser(org.ID, req.Email, string(hash), req.DisplayName, role)
-	user.Verified = true // auto-verified after passing org verification
+	user := domain.NewUser(orgID, email, string(hash), strings.TrimSpace(displayName), role)
+	user.Verified = true // eligibility was checked by the caller
 	return user, nil
 }

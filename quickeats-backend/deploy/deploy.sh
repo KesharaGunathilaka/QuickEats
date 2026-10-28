@@ -12,7 +12,7 @@ export IMAGE_TAG="$TAG"
 dc() { docker compose -p quickeats -f docker-compose.prod.yml --env-file .env.prod "$@"; }
 
 echo "==> Pulling images for $TAG"
-dc pull --quiet identity catalog order payment notification
+dc pull --quiet identity catalog order payment notification admin
 
 echo "==> Running migrations"
 dc run --rm migrate

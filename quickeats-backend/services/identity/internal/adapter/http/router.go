@@ -9,7 +9,7 @@ import (
 	"github.com/quickeats/pkg/middleware"
 )
 
-func NewRouter(authHandler *AuthHandler, orgHandler *OrgHandler, jwtSecret string) *chi.Mux {
+func NewRouter(authHandler *AuthHandler, orgHandler *OrgHandler, profileHandler *ProfileHandler, jwtSecret string) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chiMiddleware.Recoverer)
@@ -29,13 +29,25 @@ func NewRouter(authHandler *AuthHandler, orgHandler *OrgHandler, jwtSecret strin
 		r.Post("/refresh", authHandler.Refresh)
 	})
 
-	// Admin routes
+	// Public: check an organisation code during sign-up
+	r.Get("/api/v1/organisations/{slug}", orgHandler.Lookup)
+
+	// The signed-in user's own account (settings screens)
+	r.Route("/api/v1/users/me", func(r chi.Router) {
+		r.Use(middleware.Auth(jwtSecret))
+		r.Get("/", profileHandler.Get)
+		r.Patch("/", profileHandler.Update)
+		r.Post("/password", profileHandler.ChangePassword)
+		r.With(middleware.RequireRole("shop_owner", "shop_staff")).Put("/organisations", profileHandler.SetShopOrganisations)
+	})
+
+	// Admin dashboard
 	r.Route("/api/v1/admin", func(r chi.Router) {
 		r.Use(middleware.Auth(jwtSecret))
 		r.Use(middleware.RequireRole("admin"))
 		r.Post("/organisations", orgHandler.Create)
 		r.Get("/organisations", orgHandler.List)
-		r.Get("/organisations/{id}", orgHandler.GetByID)
+		r.Put("/organisations/{id}", orgHandler.Update)
 	})
 
 	// Internal service-to-service validation

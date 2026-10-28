@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/quickeats/services/order/internal/port"
 )
@@ -43,4 +44,26 @@ func (c *CatalogHTTPClient) ReleaseStock(ctx context.Context, orderID string, re
 	if err != nil { return err }
 	resp.Body.Close()
 	return nil
+}
+
+func (c *CatalogHTTPClient) ShopAccess(ctx context.Context, shopID, organisationID string) (port.ShopAccess, error) {
+	u := c.baseURL + "/internal/shops/" + url.PathEscape(shopID) + "/visible?organisationId=" + url.QueryEscape(organisationID)
+	httpReq, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil { return port.ShopAccess{}, fmt.Errorf("catalog shop access: %w", err) }
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound { return port.ShopAccess{}, nil }
+	if resp.StatusCode != http.StatusOK { return port.ShopAccess{}, fmt.Errorf("catalog shop access failed: status %d", resp.StatusCode) }
+
+	var result struct {
+		Data struct {
+			Visible bool `json:"visible"`
+			IsOpen  bool `json:"isOpen"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return port.ShopAccess{}, fmt.Errorf("catalog shop access: bad response: %w", err)
+	}
+	return port.ShopAccess{Exists: true, Visible: result.Data.Visible, IsOpen: result.Data.IsOpen}, nil
 }

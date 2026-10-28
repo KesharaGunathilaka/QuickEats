@@ -36,13 +36,17 @@ func NewRouter(handler *CatalogHandler, jwtSecret string) *chi.Mux {
 		})
 
 		r.With(middleware.RequireRole("shop_owner", "admin")).Post("/shops", handler.CreateShop)
+		r.With(middleware.RequireRole("shop_owner", "shop_staff", "admin")).Patch("/shops/{id}", handler.UpdateShop)
 	})
 
-	// Internal routes (service-to-service, no JWT)
+	// Internal routes (service-to-service, no JWT; Kong does not route /internal)
 	r.Route("/internal", func(r chi.Router) {
 		r.Post("/stock/reserve", handler.ReserveStock)
 		r.Post("/stock/release", handler.ReleaseStock)
 		r.Post("/shops", handler.CreateShopInternal)
+		r.Get("/shops/{id}/organisations", handler.ShopOrganisationsInternal)
+		r.Put("/shops/{id}/organisations", handler.SetShopOrganisationsInternal)
+		r.Get("/shops/{id}/visible", handler.ShopVisibleInternal)
 	})
 
 	return r

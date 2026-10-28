@@ -11,6 +11,7 @@ import 'package:quickeats_customer/views/order/order_status_screen.dart';
 import 'package:quickeats_customer/views/order/order_history_screen.dart';
 import 'package:quickeats_customer/views/wallet/wallet_screen.dart';
 import 'package:quickeats_customer/views/shell_screen.dart';
+import 'package:quickeats_customer/views/settings/settings_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/shops',
@@ -34,6 +35,7 @@ final appRouter = GoRouter(
         GoRoute(path: '/orders', builder: (_, __) => const OrderHistoryScreen()),
         GoRoute(path: '/orders/:id', builder: (_, s) => OrderStatusScreen(orderId: s.pathParameters['id']!)),
         GoRoute(path: '/wallet', builder: (_, __) => const WalletScreen()),
+        GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
       ],
     ),
   ],

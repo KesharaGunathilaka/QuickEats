@@ -1,5 +1,9 @@
 import 'package:get_it/get_it.dart';
 import 'package:quickeats_customer/core/network/api_client.dart';
+import 'package:quickeats_customer/core/network/ws_client.dart';
+import 'package:quickeats_customer/services/account_service.dart';
+import 'package:quickeats_customer/services/order_notification_service.dart';
+import 'package:quickeats_customer/viewmodels/settings_viewmodel.dart';
 import 'package:quickeats_customer/services/auth_service.dart';
 import 'package:quickeats_customer/services/shop_service.dart';
 import 'package:quickeats_customer/services/order_service.dart';
@@ -21,10 +25,19 @@ Future<void> setupServiceLocator() async {
   getIt.registerSingleton<ShopService>(ShopService(apiClient: getIt<ApiClient>()));
   getIt.registerSingleton<OrderService>(OrderService(apiClient: getIt<ApiClient>()));
   getIt.registerSingleton<WalletService>(WalletService(apiClient: getIt<ApiClient>()));
+  getIt.registerSingleton<AccountService>(AccountService(apiClient: getIt<ApiClient>()));
+
+  // Live order updates: connects on login, disconnects on logout
+  final notifications = OrderNotificationService(authService: authService, wsClient: WSClient());
+  await notifications.init();
+  getIt.registerSingleton<OrderNotificationService>(notifications);
 
   getIt.registerFactory<AuthViewModel>(() => AuthViewModel(authService: getIt<AuthService>()));
   getIt.registerFactory<ShopsViewModel>(() => ShopsViewModel(shopService: getIt<ShopService>()));
   getIt.registerSingleton<CartViewModel>(CartViewModel()); // singleton — persists across screens
-  getIt.registerFactory<OrderViewModel>(() => OrderViewModel(orderService: getIt<OrderService>()));
+  getIt.registerFactory<OrderViewModel>(() => OrderViewModel(
+        orderService: getIt<OrderService>(), notifications: getIt<OrderNotificationService>()));
   getIt.registerFactory<WalletViewModel>(() => WalletViewModel(walletService: getIt<WalletService>()));
+  getIt.registerFactory<SettingsViewModel>(() => SettingsViewModel(
+        accountService: getIt<AccountService>(), notifications: getIt<OrderNotificationService>()));
 }

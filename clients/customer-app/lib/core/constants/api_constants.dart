@@ -8,11 +8,18 @@ class ApiConstants {
     'API_BASE_URL',
     defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
   );
+  // Live order updates come over a WebSocket through the same Kong gateway.
+  static final String wsUrl = '${baseUrl.replaceFirst('http', 'ws')}/ws';
 
   // Auth
   static const String login = '/api/v1/auth/login';
   static const String register = '/api/v1/auth/register';
   static const String refresh = '/api/v1/auth/refresh';
+
+  // Organisations & profile
+  static String organisation(String code) => '/api/v1/organisations/${Uri.encodeComponent(code)}';
+  static const String me = '/api/v1/users/me';
+  static const String mePassword = '/api/v1/users/me/password';
 
   // Catalog
   static const String shops = '/api/v1/shops';

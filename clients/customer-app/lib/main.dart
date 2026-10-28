@@ -9,6 +9,7 @@ import 'package:quickeats_customer/viewmodels/shops_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/cart_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/order_viewmodel.dart';
 import 'package:quickeats_customer/viewmodels/wallet_viewmodel.dart';
+import 'package:quickeats_customer/viewmodels/settings_viewmodel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ class QuickEatsApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: getIt<CartViewModel>()),
         ChangeNotifierProvider(create: (_) => getIt<OrderViewModel>()),
         ChangeNotifierProvider(create: (_) => getIt<WalletViewModel>()),
+        ChangeNotifierProvider(create: (_) => getIt<SettingsViewModel>()),
       ],
       child: MaterialApp.router(
         title: 'QuickEats',

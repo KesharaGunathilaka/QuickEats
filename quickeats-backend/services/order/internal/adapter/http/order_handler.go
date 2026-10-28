@@ -13,12 +13,14 @@ import (
 )
 
 type OrderHandler struct {
-	placeOrderUC *app.PlaceOrderUseCase
-	orderRepo    port.OrderRepository
+	placeOrderUC  *app.PlaceOrderUseCase
+	orderStatusUC *app.OrderStatusUseCase
+	orderRepo     port.OrderRepository
+	catalog       port.CatalogClient
 }
 
-func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderRepo port.OrderRepository) *OrderHandler {
-	return &OrderHandler{placeOrderUC: placeOrderUC, orderRepo: orderRepo}
+func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderStatusUC *app.OrderStatusUseCase, orderRepo port.OrderRepository, catalog port.CatalogClient) *OrderHandler {
+	return &OrderHandler{placeOrderUC: placeOrderUC, orderStatusUC: orderStatusUC, orderRepo: orderRepo, catalog: catalog}
 }
 
 type PlaceOrderHTTPRequest struct {
@@ -57,6 +59,21 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 
 	if req.IdempotencyKey == "" || req.ShopID == "" || len(req.Items) == 0 {
 		httputil.RespondError(w, httputil.ErrValidation("idempotencyKey, shopId, and items are required", nil))
+		return
+	}
+
+	// Customers may only order from open shops that serve their organisation.
+	access, err := h.catalog.ShopAccess(r.Context(), req.ShopID, claims.OrganisationID)
+	if err != nil {
+		httputil.RespondError(w, httputil.ErrServiceUnavailable("could not check the shop, try again"))
+		return
+	}
+	if !access.Exists || !access.Visible {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	if !access.IsOpen {
+		httputil.RespondError(w, httputil.ErrBusinessRule("SHOP_CLOSED", "this shop is closed right now"))
 		return
 	}
 
@@ -132,13 +149,13 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newStatus := domain.OrderStatus(req.Status)
-	if err := order.TransitionTo(newStatus); err != nil {
+	oldStatus := order.Status
+	if err := order.TransitionTo(domain.OrderStatus(req.Status)); err != nil {
 		httputil.RespondError(w, httputil.ErrBusinessRule("INVALID_STATUS_TRANSITION", err.Error()))
 		return
 	}
 
-	if err := h.orderRepo.UpdateStatus(r.Context(), id, newStatus); err != nil {
+	if err := h.orderStatusUC.UpdateStatus(r.Context(), order, oldStatus); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}
@@ -165,8 +182,11 @@ func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.orderRepo.UpdateStatus(r.Context(), id, domain.StatusCancelled)
 	// In production: also trigger refund + stock release via events
+	if err := h.orderStatusUC.Cancel(r.Context(), order, "cancelled_by_customer"); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
 	httputil.RespondJSON(w, http.StatusOK, order)
 }
 
@@ -189,7 +209,10 @@ func (h *OrderHandler) RejectOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.orderRepo.UpdateStatus(r.Context(), id, domain.StatusRejected)
-	h.orderRepo.SetRejectReason(r.Context(), id, req.Reason)
+	if err := h.orderStatusUC.Reject(r.Context(), order, req.Reason); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	order.RejectReason = req.Reason
 	httputil.RespondJSON(w, http.StatusOK, order)
 }

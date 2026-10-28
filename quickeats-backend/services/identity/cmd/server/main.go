@@ -43,17 +43,27 @@ func main() {
 	// Token issuer
 	tokenIssuer := jwt.NewIssuer(cfg.JWTSecret, cfg.JWTExpiry, cfg.JWTRefreshExpiry)
 
+	// Platform admin for the dashboard, from ADMIN_EMAIL / ADMIN_PASSWORD
+	if err := app.EnsureAdmin(context.Background(), userRepo, os.Getenv("ADMIN_EMAIL"), os.Getenv("ADMIN_PASSWORD")); err != nil {
+		slog.Error("failed to create admin account", "error", err)
+		os.Exit(1)
+	}
+
 	// Use cases
+	catalog := gateway.NewCatalogClient(cfg.CatalogServiceURL)
 	registerUC := app.NewRegisterUseCase(userRepo, orgRepo)
-	registerShopUC := app.NewRegisterShopUseCase(userRepo, orgRepo, gateway.NewCatalogClient(cfg.CatalogServiceURL))
+	registerShopUC := app.NewRegisterShopUseCase(userRepo, orgRepo, catalog)
 	loginUC := app.NewLoginUseCase(userRepo, tokenIssuer)
+	profileUC := app.NewProfileUseCase(userRepo, orgRepo, catalog)
+	orgsUC := app.NewOrganisationsUseCase(orgRepo)
 
 	// HTTP handlers
 	authHandler := httpAdapter.NewAuthHandler(registerUC, registerShopUC, loginUC, tokenIssuer, userRepo)
-	orgHandler := httpAdapter.NewOrgHandler(orgRepo)
+	orgHandler := httpAdapter.NewOrgHandler(orgsUC)
+	profileHandler := httpAdapter.NewProfileHandler(profileUC)
 
 	// Router
-	router := httpAdapter.NewRouter(authHandler, orgHandler, cfg.JWTSecret)
+	router := httpAdapter.NewRouter(authHandler, orgHandler, profileHandler, cfg.JWTSecret)
 
 	// Server
 	srv := &http.Server{

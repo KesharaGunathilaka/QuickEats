@@ -5,7 +5,7 @@ set -uo pipefail
 
 cd "${DEPLOY_DIR:-/opt/quickeats}"
 dc() { docker compose -p quickeats -f docker-compose.prod.yml --env-file .env.prod "$@"; }
-SERVICES="identity catalog order payment notification"
+SERVICES="identity catalog order payment notification admin"
 ATTEMPTS=30
 
 for attempt in $(seq 1 $ATTEMPTS); do
@@ -30,6 +30,10 @@ for attempt in $(seq 1 $ATTEMPTS); do
     auth=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
         -d '{}' http://localhost/api/v1/auth/login || true)
     [ "$auth" = "401" ] || failing="$failing kong->identity($auth)"
+
+    # The admin dashboard is served through Kong too
+    dash=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/admin/ || true)
+    [ "$dash" = "200" ] || failing="$failing kong->admin($dash)"
 
     if [ -z "$failing" ]; then
         echo "All services healthy (IMAGE_TAG=${IMAGE_TAG:-unknown})"

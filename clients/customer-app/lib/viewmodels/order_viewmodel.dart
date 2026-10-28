@@ -2,12 +2,18 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:quickeats_customer/models/order.dart';
 import 'package:quickeats_customer/models/cart_item.dart';
+import 'package:quickeats_customer/services/order_notification_service.dart';
 import 'package:quickeats_customer/services/order_service.dart';
 import 'package:uuid/uuid.dart';
 
 class OrderViewModel extends ChangeNotifier {
   final OrderService _orderService;
-  OrderViewModel({required OrderService orderService}) : _orderService = orderService;
+  StreamSubscription<OrderUpdate>? _updatesSub;
+
+  OrderViewModel({required OrderService orderService, required OrderNotificationService notifications})
+      : _orderService = orderService {
+    _updatesSub = notifications.updates.listen(_onOrderUpdate);
+  }
 
   List<Order> _orders = [];
   Order? _activeOrder;
@@ -55,9 +61,25 @@ class OrderViewModel extends ChangeNotifier {
     } catch (e) { _error = 'Failed to cancel'; notifyListeners(); return false; }
   }
 
+  // Live update from the WebSocket: refresh the tracked order and the history list.
+  Future<void> _onOrderUpdate(OrderUpdate update) async {
+    final idx = _orders.indexWhere((o) => o.id == update.orderId);
+    if (idx >= 0) _orders[idx].status = update.status;
+
+    if (_activeOrder?.id == update.orderId) {
+      try {
+        _activeOrder = await _orderService.getOrder(update.orderId); // also picks up the pickup code
+      } catch (_) {
+        _activeOrder!.status = update.status;
+      }
+    }
+    notifyListeners();
+  }
+
+  // Fallback in case the WebSocket is down; live updates normally arrive first.
   void _startPolling(String orderId) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       try {
         _activeOrder = await _orderService.getOrder(orderId);
         notifyListeners();
@@ -69,5 +91,5 @@ class OrderViewModel extends ChangeNotifier {
   void stopPolling() { _pollTimer?.cancel(); }
 
   @override
-  void dispose() { _pollTimer?.cancel(); super.dispose(); }
+  void dispose() { _pollTimer?.cancel(); _updatesSub?.cancel(); super.dispose(); }
 }
