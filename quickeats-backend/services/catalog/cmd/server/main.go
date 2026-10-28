@@ -41,6 +41,10 @@ func main() {
 	menuUC := app.NewManageMenuUseCase(menuRepo, stockCache)
 	stockUC := app.NewReserveStockUseCase(pool, stockCache)
 
+	sweepCtx, stopSweeper := context.WithCancel(context.Background())
+	defer stopSweeper()
+	go stockUC.RunExpirySweeper(sweepCtx, time.Minute)
+
 	handler := httpAdapter.NewCatalogHandler(browseUC, menuUC, stockUC, shopRepo)
 	router := httpAdapter.NewRouter(handler, cfg.JWTSecret)
 
@@ -59,10 +63,14 @@ func main() {
 	srv.Shutdown(ctx)
 }
 
-// warmStockCache loads stock counts for items that have no Redis key yet
-// (e.g. seeded rows), so reservations don't treat them as out of stock.
+// warmStockCache loads stock counts for items that have no Redis key yet (seeded
+// rows, or Redis lost its data), so reservations don't treat them as out of stock.
+// The counter is the sellable quantity: stock minus what unpaid orders hold.
 func warmStockCache(ctx context.Context, pool *pgxpool.Pool, rdb *redisLib.Client) {
-	rows, err := pool.Query(ctx, `SELECT id, stock FROM menu_items`)
+	rows, err := pool.Query(ctx, `
+		SELECT m.id, m.stock - COALESCE(SUM(r.quantity) FILTER (WHERE r.status = 'HELD'), 0)
+		FROM menu_items m LEFT JOIN stock_reservations r ON r.menu_item_id = m.id
+		GROUP BY m.id, m.stock`)
 	if err != nil { slog.Error("stock cache warm-up failed", "error", err); return }
 	defer rows.Close()
 	warmed := 0

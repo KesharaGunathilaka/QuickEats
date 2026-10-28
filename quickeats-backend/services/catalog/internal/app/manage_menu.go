@@ -38,9 +38,16 @@ func (uc *ManageMenuUseCase) DeleteItem(ctx context.Context, id string) error {
 	return uc.menuRepo.Delete(ctx, id)
 }
 
+// UpdateStock sets the shop's stock count. menu_items.stock excludes confirmed sales
+// but not orders still awaiting payment, so the Redis counter, which reservations
+// draw from, is set to the new stock minus what those orders hold.
 func (uc *ManageMenuUseCase) UpdateStock(ctx context.Context, id string, stock int) error {
 	if err := uc.menuRepo.UpdateStock(ctx, id, stock); err != nil {
 		return err
 	}
-	return uc.stockCache.SetStock(ctx, id, stock)
+	held, err := uc.menuRepo.HeldQuantity(ctx, id)
+	if err != nil {
+		return err
+	}
+	return uc.stockCache.SetStock(ctx, id, stock-held)
 }

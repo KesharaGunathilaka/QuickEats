@@ -41,9 +41,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # Holds the live stock counters and processed-event IDs, so it keeps its data
+  # (append-only file) across restarts and redeploys.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -213,3 +218,4 @@ services:
 volumes:
   pgdata:
   kafkadata:
+  redisdata:

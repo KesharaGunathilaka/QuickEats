@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/quickeats/pkg/events"
@@ -24,18 +27,43 @@ func NewSagaOrchestrator(db *pgxpool.Pool, orderRepo port.OrderRepository, catal
 	return &SagaOrchestrator{db: db, orderRepo: orderRepo, catalogClient: catalogClient, paymentClient: paymentClient}
 }
 
-// HandleOrderPlaced starts the saga: reserve stock in catalog, then request payment.
-func (s *SagaOrchestrator) HandleOrderPlaced(ctx context.Context, event events.Event) error {
-	payload, _ := json.Marshal(event.Payload)
+// loadOrder decodes the order_id from a saga event and loads that order.
+//   - Malformed payload or missing order_id: logged and skipped (nil order, nil error).
+//     Retrying cannot fix a bad payload, so returning an error would only stall the topic.
+//   - Database error: returned, so the consumer retries the event.
+//   - Unknown order: logged and skipped.
+func (s *SagaOrchestrator) loadOrder(ctx context.Context, event events.Event) (*domain.Order, error) {
 	var data struct {
 		OrderID string `json:"order_id"`
 	}
-	json.Unmarshal(payload, &data)
+	payload, err := json.Marshal(event.Payload)
+	if err == nil {
+		err = json.Unmarshal(payload, &data)
+	}
+	if err == nil && data.OrderID == "" {
+		err = errors.New("missing order_id")
+	}
+	if err != nil {
+		slog.Error("saga: malformed event payload, skipping",
+			"event_type", event.EventType, "event_id", event.EventID, "error", err)
+		return nil, nil
+	}
 
 	order, err := s.orderRepo.GetByID(ctx, data.OrderID)
+	if err != nil {
+		return nil, fmt.Errorf("saga: load order %s for %s: %w", data.OrderID, event.EventType, err)
+	}
+	if order == nil {
+		slog.Error("saga: order not found, skipping", "event_type", event.EventType, "order_id", data.OrderID)
+	}
+	return order, nil
+}
+
+// HandleOrderPlaced starts the saga: reserve stock in catalog, then request payment.
+func (s *SagaOrchestrator) HandleOrderPlaced(ctx context.Context, event events.Event) error {
+	order, err := s.loadOrder(ctx, event)
 	if err != nil || order == nil {
-		slog.Error("saga: order not found for order placed", "order_id", data.OrderID)
-		return nil
+		return err
 	}
 	if order.Status != domain.StatusPendingPayment {
 		return nil // already progressed (redelivered event)
@@ -57,20 +85,9 @@ func (s *SagaOrchestrator) HandleOrderPlaced(ctx context.Context, event events.E
 
 // HandleStockReserved is called when catalog.stock.reserved event arrives.
 func (s *SagaOrchestrator) HandleStockReserved(ctx context.Context, event events.Event) error {
-	payload, _ := json.Marshal(event.Payload)
-	var data struct {
-		OrderID      string `json:"order_id"`
-		Reservations []struct {
-			MenuItemID    string `json:"menu_item_id"`
-			ReservationID string `json:"reservation_id"`
-		} `json:"reservations"`
-	}
-	json.Unmarshal(payload, &data)
-
-	order, err := s.orderRepo.GetByID(ctx, data.OrderID)
+	order, err := s.loadOrder(ctx, event)
 	if err != nil || order == nil {
-		slog.Error("saga: order not found for stock reserved", "order_id", data.OrderID)
-		return nil
+		return err
 	}
 
 	s.requestPayment(ctx, order)
@@ -96,38 +113,58 @@ func (s *SagaOrchestrator) requestPayment(ctx context.Context, order *domain.Ord
 
 // HandlePaymentCompleted is called when payment.payment.completed event arrives.
 func (s *SagaOrchestrator) HandlePaymentCompleted(ctx context.Context, event events.Event) error {
-	payload, _ := json.Marshal(event.Payload)
-	var data struct {
-		OrderID string `json:"order_id"`
-	}
-	json.Unmarshal(payload, &data)
-
-	order, err := s.orderRepo.GetByID(ctx, data.OrderID)
+	order, err := s.loadOrder(ctx, event)
 	if err != nil || order == nil {
-		return nil
+		return err
 	}
 
+	prevStatus := order.Status
 	if err := order.TransitionTo(domain.StatusConfirmed); err != nil {
 		slog.Error("saga: transition to confirmed failed", "order_id", order.ID, "error", err)
 		return nil
 	}
 
-	// Write confirmed status + event in single tx
+	// Take the sold items from the shop's stock before confirming. Commit is
+	// idempotent, so if the confirm below fails the retried event commits nothing new.
+	committed, err := s.catalogClient.CommitStock(ctx, order.ID)
+	if err != nil {
+		return fmt.Errorf("saga confirm %s: commit stock: %w", order.ID, err)
+	}
+	if committed == 0 {
+		slog.Warn("saga confirm: no held reservations to commit", "order_id", order.ID)
+	}
+
+	// Write confirmed status + event in single tx. Errors are returned so the
+	// consumer retries; the status check above makes a retry after commit a no-op.
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("saga confirm %s: begin tx: %w", order.ID, err)
 	}
 	defer tx.Rollback(ctx)
 
-	tx.Exec(ctx, `UPDATE orders SET status=$1, pickup_code=$2, updated_at=now() WHERE id=$3`,
-		order.Status, order.PickupCode, order.ID)
+	// Conditional on the status we read: if the order was cancelled meanwhile (e.g.
+	// payment timeout), it stays cancelled, and that cancel releases the stock we
+	// just committed.
+	tag, err := tx.Exec(ctx, `UPDATE orders SET status=$1, pickup_code=$2, updated_at=now() WHERE id=$3 AND status=$4`,
+		order.Status, order.PickupCode, order.ID, prevStatus)
+	if err != nil {
+		return fmt.Errorf("saga confirm %s: update order: %w", order.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		slog.Warn("saga confirm: order changed status meanwhile, not confirming", "order_id", order.ID)
+		return nil
+	}
 
 	confirmedEvent := events.NewEvent("order.order.confirmed", "order", order.ID, domain.OrderConfirmedPayload{
 		OrderID: order.ID, CustomerID: order.CustomerID, ShopID: order.ShopID,
 		PickupCode: order.PickupCode, TotalAmount: order.TotalAmount, Currency: order.Currency,
 	})
-	outbox.WriteToOutbox(ctx, tx, confirmedEvent)
-	tx.Commit(ctx)
+	if err := outbox.WriteToOutbox(ctx, tx, confirmedEvent); err != nil {
+		return fmt.Errorf("saga confirm %s: write outbox: %w", order.ID, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("saga confirm %s: commit: %w", order.ID, err)
+	}
 
 	slog.Info("saga: order confirmed", "order_id", order.ID, "pickup_code", order.PickupCode)
 	return nil
@@ -135,15 +172,9 @@ func (s *SagaOrchestrator) HandlePaymentCompleted(ctx context.Context, event eve
 
 // HandlePaymentFailed triggers compensation: release stock + cancel order.
 func (s *SagaOrchestrator) HandlePaymentFailed(ctx context.Context, event events.Event) error {
-	payload, _ := json.Marshal(event.Payload)
-	var data struct {
-		OrderID string `json:"order_id"`
-	}
-	json.Unmarshal(payload, &data)
-
-	order, _ := s.orderRepo.GetByID(ctx, data.OrderID)
-	if order == nil {
-		return nil
+	order, err := s.loadOrder(ctx, event)
+	if err != nil || order == nil {
+		return err
 	}
 
 	s.compensateCancel(ctx, order, "payment_failed")
@@ -152,15 +183,9 @@ func (s *SagaOrchestrator) HandlePaymentFailed(ctx context.Context, event events
 
 // HandleStockInsufficient triggers compensation: cancel order.
 func (s *SagaOrchestrator) HandleStockInsufficient(ctx context.Context, event events.Event) error {
-	payload, _ := json.Marshal(event.Payload)
-	var data struct {
-		OrderID string `json:"order_id"`
-	}
-	json.Unmarshal(payload, &data)
-
-	order, _ := s.orderRepo.GetByID(ctx, data.OrderID)
-	if order == nil {
-		return nil
+	order, err := s.loadOrder(ctx, event)
+	if err != nil || order == nil {
+		return err
 	}
 
 	s.compensateCancel(ctx, order, "stock_insufficient")
@@ -176,6 +201,7 @@ func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.O
 		s.releaseStock(ctx, order.ID)
 		return
 	}
+	prevStatus := order.Status
 	if err := order.TransitionTo(domain.StatusCancelled); err != nil {
 		slog.Error("saga compensate: order can no longer be cancelled", "order_id", order.ID, "status", order.Status, "error", err)
 		return
@@ -188,8 +214,15 @@ func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.O
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2`, domain.StatusCancelled, order.ID); err != nil {
+	// Conditional on the status we read, so a concurrent confirm and cancel can't both win.
+	tag, err := tx.Exec(ctx, `UPDATE orders SET status=$1, updated_at=now() WHERE id=$2 AND status=$3`,
+		domain.StatusCancelled, order.ID, prevStatus)
+	if err != nil {
 		slog.Error("saga compensate: cancel order failed", "order_id", order.ID, "error", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		slog.Warn("saga compensate: order changed status meanwhile, not cancelling", "order_id", order.ID)
 		return
 	}
 
@@ -208,6 +241,37 @@ func (s *SagaOrchestrator) compensateCancel(ctx context.Context, order *domain.O
 
 	s.releaseStock(ctx, order.ID)
 	slog.Info("saga: order cancelled (compensation)", "order_id", order.ID, "reason", reason)
+}
+
+// paymentTimeout matches catalog's reservation TTL: an order still unpaid after this
+// is cancelled and its stock released.
+const paymentTimeout = 15 * time.Minute
+
+// CancelUnpaidOrders cancels orders that have waited longer than paymentTimeout for
+// payment, releasing their stock.
+func (s *SagaOrchestrator) CancelUnpaidOrders(ctx context.Context) {
+	orders, err := s.orderRepo.FindTimedOutOrders(ctx, domain.StatusPendingPayment, int(paymentTimeout/time.Minute))
+	if err != nil {
+		slog.Error("saga: find unpaid orders failed", "error", err)
+		return
+	}
+	for _, order := range orders {
+		s.compensateCancel(ctx, order, "payment_timeout")
+	}
+}
+
+// RunPaymentTimeouts calls CancelUnpaidOrders every interval until ctx is cancelled.
+func (s *SagaOrchestrator) RunPaymentTimeouts(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.CancelUnpaidOrders(ctx)
+		}
+	}
 }
 
 // releaseStock returns every reservation held by the order. When stock was never

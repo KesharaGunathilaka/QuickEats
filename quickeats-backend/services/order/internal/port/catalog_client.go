@@ -25,6 +25,9 @@ type ReservationResult struct {
 
 type CatalogClient interface {
 	ReserveStock(ctx context.Context, req ReserveStockRequest) (*ReserveStockResponse, error)
+	// CommitStock makes the order's reservations final (the sale is taken from the
+	// shop's stock). Idempotent; returns how many reservations were committed.
+	CommitStock(ctx context.Context, orderID string) (int, error)
 	ReleaseStock(ctx context.Context, orderID string, reservationIDs []string) error
 	// ShopAccess reports whether the shop exists, serves the organisation, and is open.
 	ShopAccess(ctx context.Context, shopID, organisationID string) (ShopAccess, error)

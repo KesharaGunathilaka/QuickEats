@@ -36,6 +36,22 @@ func (c *CatalogHTTPClient) ReserveStock(ctx context.Context, req port.ReserveSt
 	return &result.Data, nil
 }
 
+func (c *CatalogHTTPClient) CommitStock(ctx context.Context, orderID string) (int, error) {
+	body, _ := json.Marshal(map[string]string{"orderId": orderID})
+	httpReq, _ := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/internal/stock/commit", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil { return 0, fmt.Errorf("catalog commit: %w", err) }
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK { return 0, fmt.Errorf("catalog commit failed: status %d", resp.StatusCode) }
+
+	var result struct{ Data struct{ Committed int `json:"committed"` } `json:"data"` }
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("catalog commit: bad response: %w", err)
+	}
+	return result.Data.Committed, nil
+}
+
 func (c *CatalogHTTPClient) ReleaseStock(ctx context.Context, orderID string, reservationIDs []string) error {
 	body, _ := json.Marshal(map[string]interface{}{"orderId": orderID, "reservationIds": reservationIDs})
 	httpReq, _ := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/internal/stock/release", bytes.NewReader(body))

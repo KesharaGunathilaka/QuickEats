@@ -42,6 +42,7 @@ func NewRouter(handler *CatalogHandler, jwtSecret string) *chi.Mux {
 	// Internal routes (service-to-service, no JWT; Kong does not route /internal)
 	r.Route("/internal", func(r chi.Router) {
 		r.Post("/stock/reserve", handler.ReserveStock)
+		r.Post("/stock/commit", handler.CommitStock)
 		r.Post("/stock/release", handler.ReleaseStock)
 		r.Post("/shops", handler.CreateShopInternal)
 		r.Get("/shops/{id}/organisations", handler.ShopOrganisationsInternal)

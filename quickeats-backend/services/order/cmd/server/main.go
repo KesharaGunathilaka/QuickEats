@@ -55,12 +55,17 @@ func main() {
 	// Saga orchestrator
 	saga := app.NewSagaOrchestrator(pool, orderRepo, catalogClient, paymentClient)
 
-	// Subscribe to events
-	consumer.Subscribe("order.order.placed", "order-svc", saga.HandleOrderPlaced)
-	consumer.Subscribe("catalog.stock.reserved", "order-svc", saga.HandleStockReserved)
-	consumer.Subscribe("catalog.stock.insufficient", "order-svc", saga.HandleStockInsufficient)
-	consumer.Subscribe("payment.payment.completed", "order-svc", saga.HandlePaymentCompleted)
-	consumer.Subscribe("payment.payment.failed", "order-svc", saga.HandlePaymentFailed)
+	// Subscribe to events. Delivery is at-least-once, so each handler is wrapped to
+	// skip events this service has already handled.
+	once := func(h events.Handler) events.Handler { return events.Deduplicate(idempotencyChecker, "order-svc", h) }
+	consumer.Subscribe("order.order.placed", "order-svc", once(saga.HandleOrderPlaced))
+	consumer.Subscribe("catalog.stock.reserved", "order-svc", once(saga.HandleStockReserved))
+	consumer.Subscribe("catalog.stock.insufficient", "order-svc", once(saga.HandleStockInsufficient))
+	consumer.Subscribe("payment.payment.completed", "order-svc", once(saga.HandlePaymentCompleted))
+	consumer.Subscribe("payment.payment.failed", "order-svc", once(saga.HandlePaymentFailed))
+
+	// Cancel orders left unpaid past the payment timeout, releasing their stock.
+	go saga.RunPaymentTimeouts(context.Background(), time.Minute)
 
 	// Outbox relay
 	relay := outbox.NewRelay(pool, publisher, 2*time.Second)

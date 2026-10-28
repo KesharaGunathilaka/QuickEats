@@ -161,6 +161,21 @@ func (h *CatalogHandler) ReserveStock(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, result)
 }
 
+// CommitStock is called by the order service when an order is confirmed.
+func (h *CatalogHandler) CommitStock(w http.ResponseWriter, r *http.Request) {
+	var req CommitStockRequest
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	committed, err := h.stockUC.Commit(r.Context(), req.OrderID)
+	if err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondJSON(w, http.StatusOK, map[string]int{"committed": committed})
+}
+
 func (h *CatalogHandler) ReleaseStock(w http.ResponseWriter, r *http.Request) {
 	var req ReleaseStockRequest
 	if err := httputil.DecodeJSON(r, &req); err != nil {

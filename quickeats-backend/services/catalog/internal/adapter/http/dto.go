@@ -48,6 +48,10 @@ type ReserveStockItem struct {
 	Quantity   int    `json:"quantity"`
 }
 
+type CommitStockRequest struct {
+	OrderID string `json:"orderId"`
+}
+
 type ReleaseStockRequest struct {
 	OrderID        string   `json:"orderId"`
 	ReservationIDs []string `json:"reservationIds"`
