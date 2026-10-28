@@ -180,8 +180,20 @@ class _PasswordDialog extends StatefulWidget {
 class _PasswordDialogState extends State<_PasswordDialog> {
   final _form = GlobalKey<FormState>();
   final _current = TextEditingController(), _next = TextEditingController(), _confirm = TextEditingController();
+  final _visible = [false, false, false]; // current, new, confirm
   bool _busy = false;
   String? _error;
+
+  Widget _passwordField(int i, TextEditingController c, String label, String? Function(String?) validator) => TextFormField(
+    controller: c,
+    obscureText: !_visible[i],
+    validator: validator,
+    decoration: InputDecoration(labelText: label, suffixIcon: IconButton(
+      icon: Icon(_visible[i] ? Icons.visibility : Icons.visibility_off),
+      tooltip: _visible[i] ? 'Hide password' : 'Show password',
+      onPressed: () => setState(() => _visible[i] = !_visible[i]),
+    )),
+  );
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
@@ -195,12 +207,9 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override Widget build(BuildContext context) => AlertDialog(
     title: const Text('Change password'),
     content: Form(key: _form, child: Column(mainAxisSize: MainAxisSize.min, children: [
-      TextFormField(controller: _current, obscureText: true, decoration: const InputDecoration(labelText: 'Current password'),
-        validator: (v) => (v ?? '').isEmpty ? 'Required' : null),
-      TextFormField(controller: _next, obscureText: true, decoration: const InputDecoration(labelText: 'New password'),
-        validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters' : null),
-      TextFormField(controller: _confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm new password'),
-        validator: (v) => v != _next.text ? 'Passwords don\'t match' : null),
+      _passwordField(0, _current, 'Current password', (v) => (v ?? '').isEmpty ? 'Required' : null),
+      _passwordField(1, _next, 'New password', (v) => (v ?? '').length < 6 ? 'At least 6 characters' : null),
+      _passwordField(2, _confirm, 'Confirm new password', (v) => v != _next.text ? 'Passwords don\'t match' : null),
       if (_error != null) Padding(padding: const EdgeInsets.only(top: 12),
         child: Text(_error!, style: const TextStyle(color: AppColors.error, fontSize: 13))),
     ])),
