@@ -53,7 +53,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		InviteCode:       req.InviteCode,
 	})
 	if err != nil {
-		respondRegisterError(w, err)
+		respondError(w, err)
 		return
 	}
 
@@ -68,41 +68,29 @@ func (h *AuthHandler) RegisterShop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" || req.DisplayName == "" || req.OrganisationSlug == "" || req.ShopName == "" {
-		httputil.RespondError(w, httputil.ErrValidation("email, password, displayName, organisationSlug, and shopName are required", nil))
+	slugs := req.OrganisationSlugs
+	if len(slugs) == 0 && req.OrganisationSlug != "" {
+		slugs = []string{req.OrganisationSlug}
+	}
+	if req.Email == "" || req.Password == "" || req.DisplayName == "" || len(slugs) == 0 || req.ShopName == "" {
+		httputil.RespondError(w, httputil.ErrValidation("email, password, displayName, organisationSlugs, and shopName are required", nil))
 		return
 	}
 
 	user, err := h.registerShopUC.Execute(r.Context(), app.RegisterShopRequest{
-		RegisterRequest: app.RegisterRequest{
-			OrganisationSlug: req.OrganisationSlug,
-			Email:            req.Email,
-			Password:         req.Password,
-			DisplayName:      req.DisplayName,
-			InviteCode:       req.InviteCode,
-		},
-		ShopName:        req.ShopName,
-		ShopDescription: req.ShopDescription,
+		Email:             req.Email,
+		Password:          req.Password,
+		DisplayName:       req.DisplayName,
+		OrganisationSlugs: slugs,
+		ShopName:          req.ShopName,
+		ShopDescription:   req.ShopDescription,
 	})
 	if err != nil {
-		respondRegisterError(w, err)
+		respondError(w, err)
 		return
 	}
 
 	httputil.RespondJSON(w, http.StatusCreated, user)
-}
-
-func respondRegisterError(w http.ResponseWriter, err error) {
-	switch err {
-	case domain.ErrUserAlreadyExists:
-		httputil.RespondError(w, httputil.ErrConflict(err.Error()))
-	case domain.ErrOrgNotFound:
-		httputil.RespondError(w, httputil.ErrNotFound("organisation"))
-	case domain.ErrVerificationFailed:
-		httputil.RespondError(w, httputil.ErrBusinessRule("VERIFICATION_FAILED", "this email is not allowed for the organisation"))
-	default:
-		httputil.RespondError(w, err)
-	}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

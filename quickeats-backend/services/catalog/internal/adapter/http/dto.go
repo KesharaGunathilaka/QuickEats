@@ -5,12 +5,25 @@ type CreateShopRequest struct {
 	Description string `json:"description"`
 }
 
+// UpdateShopRequest edits a shop; omitted fields are left unchanged.
+type UpdateShopRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	IsOpen      *bool   `json:"isOpen,omitempty"`
+}
+
 // InternalCreateShopRequest is sent by identity when a shop owner signs up.
 type InternalCreateShopRequest struct {
-	OrganisationID string `json:"organisationId"`
-	OwnerID        string `json:"ownerId"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
+	OrganisationIDs []string `json:"organisationIds,omitempty"`
+	OrganisationID  string   `json:"organisationId,omitempty"` // older single-organisation form
+	OwnerID         string   `json:"ownerId"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+}
+
+// InternalShopOrganisationsRequest replaces the organisations a shop serves.
+type InternalShopOrganisationsRequest struct {
+	OrganisationIDs []string `json:"organisationIds"`
 }
 
 type CreateMenuItemRequest struct {

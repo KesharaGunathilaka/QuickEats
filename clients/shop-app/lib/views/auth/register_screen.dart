@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:quickeats_shop/core/constants/app_colors.dart';
+import 'package:quickeats_shop/models/organisation.dart';
 import 'package:quickeats_shop/viewmodels/auth_viewmodel.dart';
+import 'package:quickeats_shop/views/widgets/org_codes_field.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,7 +14,8 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _orgController = TextEditingController();
+  List<Organisation> _orgs = [];
+  bool _orgsMissing = false;
   final _shopNameController = TextEditingController();
   final _shopDescController = TextEditingController();
   final _nameController = TextEditingController();
@@ -22,7 +25,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   void dispose() {
-    for (final c in [_orgController, _shopNameController, _shopDescController, _nameController, _emailController, _passwordController]) {
+    for (final c in [_shopNameController, _shopDescController, _nameController, _emailController, _passwordController]) {
       c.dispose();
     }
     super.dispose();
@@ -52,9 +55,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     Text('Start receiving orders from your campus', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                     const SizedBox(height: 32),
 
+                    _sectionLabel('Serves'),
+                    OrgCodesField(value: _orgs, onChanged: (orgs) => setState(() { _orgs = orgs; _orgsMissing = false; })),
+                    if (_orgsMissing)
+                      const Padding(padding: EdgeInsets.only(top: 6),
+                        child: Text('Add at least one organisation code', style: TextStyle(color: AppColors.error, fontSize: 12.5))),
+                    const SizedBox(height: 24),
+
                     _sectionLabel('Shop'),
-                    _field(_orgController, 'Organisation Code', Icons.school_outlined, hint: 'e.g., demo'),
-                    const SizedBox(height: 16),
                     _field(_shopNameController, 'Shop Name', Icons.storefront_outlined),
                     const SizedBox(height: 16),
                     _field(_shopDescController, 'Short Description (optional)', Icons.notes_outlined, required: false),
@@ -63,7 +71,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     _sectionLabel('Owner account'),
                     _field(_nameController, 'Your Name', Icons.person_outline),
                     const SizedBox(height: 16),
-                    _field(_emailController, 'Email', Icons.email_outlined, keyboard: TextInputType.emailAddress),
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autocorrect: false,
+                      decoration: _inputDecoration('Email', Icons.email_outlined).copyWith(helperText: 'Any email works, e.g. Gmail'),
+                      validator: (v) {
+                        final email = (v ?? '').trim();
+                        if (email.isEmpty) return 'Required';
+                        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email) ? null : 'Enter a valid email address';
+                      },
+                    ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _passwordController,
@@ -135,9 +153,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _handleRegister(AuthViewModel vm) async {
-    if (!_formKey.currentState!.validate()) return;
+    final formOk = _formKey.currentState!.validate();
+    setState(() => _orgsMissing = _orgs.isEmpty);
+    if (!formOk || _orgs.isEmpty) return;
     final ok = await vm.registerShop(
-      orgSlug: _orgController.text.trim(),
+      orgSlugs: _orgs.map((o) => o.slug).toList(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
       displayName: _nameController.text.trim(),

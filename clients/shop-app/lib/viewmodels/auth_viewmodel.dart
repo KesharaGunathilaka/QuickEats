@@ -36,7 +36,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   Future<bool> registerShop({
-    required String orgSlug, required String email, required String password,
+    required List<String> orgSlugs, required String email, required String password,
     required String displayName, required String shopName, String shopDescription = '',
   }) async {
     _isLoading = true;
@@ -45,7 +45,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       await _authService.registerShop(
-        orgSlug: orgSlug, email: email, password: password,
+        orgSlugs: orgSlugs, email: email, password: password,
         displayName: displayName, shopName: shopName, shopDescription: shopDescription,
       );
       _isLoading = false;

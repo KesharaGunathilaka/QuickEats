@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:quickeats_customer/core/constants/order_status.dart';
 import 'package:quickeats_customer/core/network/ws_client.dart';
 import 'package:quickeats_customer/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// A live change to one of the customer's orders.
 class OrderUpdate {
@@ -24,11 +25,26 @@ class OrderNotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   final _updates = StreamController<OrderUpdate>.broadcast();
   bool _connected = false;
+  bool _alertsEnabled = true;
+  static const _alertsKey = 'order_alerts_enabled';
 
   OrderNotificationService({required AuthService authService, required WSClient wsClient})
       : _auth = authService, _ws = wsClient;
 
   Stream<OrderUpdate> get updates => _updates.stream;
+
+  /// Whether status changes pop up as phone notifications (live in-app updates always run).
+  bool get alertsEnabled => _alertsEnabled;
+
+  Future<void> setAlertsEnabled(bool enabled) async {
+    _alertsEnabled = enabled;
+    try {
+      await (await SharedPreferences.getInstance()).setBool(_alertsKey, enabled);
+    } catch (e) {
+      debugPrint('[Notify] could not save preference: $e');
+    }
+    if (enabled) await requestPermission();
+  }
 
   static const _channel = AndroidNotificationDetails(
     'order_updates', 'Order updates',
@@ -38,6 +54,9 @@ class OrderNotificationService {
   );
 
   Future<void> init() async {
+    try {
+      _alertsEnabled = (await SharedPreferences.getInstance()).getBool(_alertsKey) ?? true;
+    } catch (_) {}
     if (!kIsWeb) {
       await _plugin.initialize(
         settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
@@ -50,7 +69,7 @@ class OrderNotificationService {
 
   /// Asks for the Android 13+ notification permission. Call once a screen is showing.
   Future<void> requestPermission() async {
-    if (kIsWeb) return;
+    if (kIsWeb || !_alertsEnabled) return;
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
@@ -110,7 +129,7 @@ class OrderNotificationService {
   }
 
   Future<void> _showNotification(OrderUpdate update) async {
-    if (kIsWeb) return;
+    if (kIsWeb || !_alertsEnabled) return;
     var body = update.status.customerMessage;
     if (update.status == OrderStatus.confirmed && (update.pickupCode ?? '').isNotEmpty) {
       body = '$body Pickup code: ${update.pickupCode}';

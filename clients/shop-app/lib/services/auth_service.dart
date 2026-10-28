@@ -57,11 +57,11 @@ class AuthService extends ChangeNotifier {
 
   /// Creates a shop-owner account together with its shop. Sign in afterwards.
   Future<void> registerShop({
-    required String orgSlug, required String email, required String password,
+    required List<String> orgSlugs, required String email, required String password,
     required String displayName, required String shopName, String shopDescription = '',
   }) async {
     await _rawDio.post(ApiConstants.registerShop, data: {
-      'organisationSlug': orgSlug,
+      'organisationSlugs': orgSlugs,
       'email': email,
       'password': password,
       'displayName': displayName,

@@ -16,6 +16,11 @@ class ApiConstants {
   static const String register = '/api/v1/auth/register';
   static const String refresh = '/api/v1/auth/refresh';
 
+  // Organisations & profile
+  static String organisation(String code) => '/api/v1/organisations/${Uri.encodeComponent(code)}';
+  static const String me = '/api/v1/users/me';
+  static const String mePassword = '/api/v1/users/me/password';
+
   // Catalog
   static const String shops = '/api/v1/shops';
   static String shopById(String id) => '/api/v1/shops/$id';

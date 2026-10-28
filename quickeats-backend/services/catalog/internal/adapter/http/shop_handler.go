@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/quickeats/pkg/httputil"
@@ -36,16 +37,73 @@ func (h *CatalogHandler) ListShops(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, shops)
 }
 
-func (h *CatalogHandler) GetShop(w http.ResponseWriter, r *http.Request) {
-	shop, err := h.browseUC.GetShop(r.Context(), chi.URLParam(r, "id"))
+// visibleShop loads a shop the caller may see: shops serving their organisation, their
+// own shop, or any shop for an admin. Other shops look like they don't exist.
+func (h *CatalogHandler) visibleShop(w http.ResponseWriter, r *http.Request, shopID string) *domain.Shop {
+	claims := middleware.GetClaims(r.Context())
+	shop, err := h.browseUC.GetShop(r.Context(), shopID)
 	if err != nil || shop == nil {
 		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return nil
+	}
+	if claims.Role == "admin" || claims.ShopID == shop.ID || shop.ServesOrganisation(claims.OrganisationID) {
+		return shop
+	}
+	httputil.RespondError(w, httputil.ErrNotFound("shop"))
+	return nil
+}
+
+func (h *CatalogHandler) GetShop(w http.ResponseWriter, r *http.Request) {
+	shop := h.visibleShop(w, r, chi.URLParam(r, "id"))
+	if shop == nil {
+		return
+	}
+	httputil.RespondJSON(w, http.StatusOK, shop)
+}
+
+// UpdateShop lets a merchant edit their own shop's details and open/closed state.
+func (h *CatalogHandler) UpdateShop(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	shopID := chi.URLParam(r, "id")
+	if claims.Role != "admin" && claims.ShopID != shopID {
+		httputil.RespondError(w, httputil.ErrForbidden("you can only edit your own shop"))
+		return
+	}
+	var req UpdateShopRequest
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	shop, err := h.shopRepo.GetByID(r.Context(), shopID)
+	if err != nil || shop == nil {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || len(name) > 255 {
+			httputil.RespondError(w, httputil.ErrValidation("shop name must be 1-255 characters", nil))
+			return
+		}
+		shop.Name = name
+	}
+	if req.Description != nil {
+		shop.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.IsOpen != nil {
+		shop.IsOpen = *req.IsOpen
+	}
+	if err := h.shopRepo.Update(r.Context(), shop); err != nil {
+		httputil.RespondError(w, err)
 		return
 	}
 	httputil.RespondJSON(w, http.StatusOK, shop)
 }
 
 func (h *CatalogHandler) ListMenu(w http.ResponseWriter, r *http.Request) {
+	if h.visibleShop(w, r, chi.URLParam(r, "id")) == nil {
+		return
+	}
 	items, err := h.menuUC.ListItems(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		httputil.RespondError(w, err)
@@ -130,7 +188,7 @@ func (h *CatalogHandler) CreateShop(w http.ResponseWriter, r *http.Request) {
 	}
 	// Simplified: create directly via repo
 	// In production, this would go through a use case
-	shop := domain.NewShop(claims.OrganisationID, req.Name, req.Description, claims.UserID)
+	shop := domain.NewShop([]string{claims.OrganisationID}, req.Name, req.Description, claims.UserID)
 	if err := h.shopRepo.Create(r.Context(), shop); err != nil {
 		httputil.RespondError(w, err)
 		return
@@ -145,17 +203,67 @@ func (h *CatalogHandler) CreateShopInternal(w http.ResponseWriter, r *http.Reque
 		httputil.RespondError(w, err)
 		return
 	}
-	if req.OrganisationID == "" || req.OwnerID == "" || req.Name == "" {
-		httputil.RespondError(w, httputil.ErrValidation("organisationId, ownerId and name are required", nil))
+	orgIDs := req.OrganisationIDs
+	if len(orgIDs) == 0 && req.OrganisationID != "" {
+		orgIDs = []string{req.OrganisationID}
+	}
+	if len(orgIDs) == 0 || req.OwnerID == "" || req.Name == "" {
+		httputil.RespondError(w, httputil.ErrValidation("organisationIds, ownerId and name are required", nil))
 		return
 	}
-	shop := domain.NewShop(req.OrganisationID, req.Name, req.Description, req.OwnerID)
-	shop.IsOpen = true // the shop app has no open/close toggle yet, so new shops start open
+	shop := domain.NewShop(orgIDs, req.Name, req.Description, req.OwnerID)
+	shop.IsOpen = true // new shops start open; the merchant can close it in settings
 	if err := h.shopRepo.Create(r.Context(), shop); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}
 	httputil.RespondJSON(w, http.StatusCreated, shop)
+}
+
+// ShopOrganisationsInternal returns the organisations a shop serves (used by identity).
+func (h *CatalogHandler) ShopOrganisationsInternal(w http.ResponseWriter, r *http.Request) {
+	shop, err := h.shopRepo.GetByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || shop == nil {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{"organisationIds": shop.OrganisationIDs})
+}
+
+// SetShopOrganisationsInternal replaces the organisations a shop serves (used by identity).
+func (h *CatalogHandler) SetShopOrganisationsInternal(w http.ResponseWriter, r *http.Request) {
+	var req InternalShopOrganisationsRequest
+	if err := httputil.DecodeJSON(r, &req); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	if len(req.OrganisationIDs) == 0 {
+		httputil.RespondError(w, httputil.ErrValidation("organisationIds is required", nil))
+		return
+	}
+	shopID := chi.URLParam(r, "id")
+	if shop, err := h.shopRepo.GetByID(r.Context(), shopID); err != nil || shop == nil {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	if err := h.shopRepo.SetOrganisations(r.Context(), shopID, req.OrganisationIDs); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{"organisationIds": req.OrganisationIDs})
+}
+
+// ShopVisibleInternal tells the order service whether a customer's organisation may order from a shop.
+func (h *CatalogHandler) ShopVisibleInternal(w http.ResponseWriter, r *http.Request) {
+	shop, err := h.shopRepo.GetByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || shop == nil {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	httputil.RespondJSON(w, http.StatusOK, map[string]bool{
+		"visible": shop.ServesOrganisation(r.URL.Query().Get("organisationId")),
+		"isOpen":  shop.IsOpen,
+	})
 }
 
 func (h *CatalogHandler) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {

@@ -56,6 +56,8 @@ pipeline {
                         for s in $SERVICES; do
                             docker build -f "services/$s/Dockerfile" -t "$ECR_REGISTRY/quickeats-$s:$IMAGE_TAG" .
                         done
+                        # React admin dashboard (type-checks and builds inside the image)
+                        docker build -t "$ECR_REGISTRY/quickeats-admin:$IMAGE_TAG" ../clients/admin-dashboard
                     '''
                 }
             }
@@ -65,7 +67,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    for s in $SERVICES; do
+                    for s in $SERVICES admin; do
                         docker push "$ECR_REGISTRY/quickeats-$s:$IMAGE_TAG"
                     done
                 '''

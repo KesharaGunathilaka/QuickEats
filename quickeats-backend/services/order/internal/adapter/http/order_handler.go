@@ -16,10 +16,11 @@ type OrderHandler struct {
 	placeOrderUC  *app.PlaceOrderUseCase
 	orderStatusUC *app.OrderStatusUseCase
 	orderRepo     port.OrderRepository
+	catalog       port.CatalogClient
 }
 
-func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderStatusUC *app.OrderStatusUseCase, orderRepo port.OrderRepository) *OrderHandler {
-	return &OrderHandler{placeOrderUC: placeOrderUC, orderStatusUC: orderStatusUC, orderRepo: orderRepo}
+func NewOrderHandler(placeOrderUC *app.PlaceOrderUseCase, orderStatusUC *app.OrderStatusUseCase, orderRepo port.OrderRepository, catalog port.CatalogClient) *OrderHandler {
+	return &OrderHandler{placeOrderUC: placeOrderUC, orderStatusUC: orderStatusUC, orderRepo: orderRepo, catalog: catalog}
 }
 
 type PlaceOrderHTTPRequest struct {
@@ -58,6 +59,21 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 
 	if req.IdempotencyKey == "" || req.ShopID == "" || len(req.Items) == 0 {
 		httputil.RespondError(w, httputil.ErrValidation("idempotencyKey, shopId, and items are required", nil))
+		return
+	}
+
+	// Customers may only order from open shops that serve their organisation.
+	access, err := h.catalog.ShopAccess(r.Context(), req.ShopID, claims.OrganisationID)
+	if err != nil {
+		httputil.RespondError(w, httputil.ErrServiceUnavailable("could not check the shop, try again"))
+		return
+	}
+	if !access.Exists || !access.Visible {
+		httputil.RespondError(w, httputil.ErrNotFound("shop"))
+		return
+	}
+	if !access.IsOpen {
+		httputil.RespondError(w, httputil.ErrBusinessRule("SHOP_CLOSED", "this shop is closed right now"))
 		return
 	}
 

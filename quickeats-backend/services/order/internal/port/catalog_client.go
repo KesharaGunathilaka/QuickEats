@@ -26,4 +26,12 @@ type ReservationResult struct {
 type CatalogClient interface {
 	ReserveStock(ctx context.Context, req ReserveStockRequest) (*ReserveStockResponse, error)
 	ReleaseStock(ctx context.Context, orderID string, reservationIDs []string) error
+	// ShopAccess reports whether the shop exists, serves the organisation, and is open.
+	ShopAccess(ctx context.Context, shopID, organisationID string) (ShopAccess, error)
+}
+
+type ShopAccess struct {
+	Exists  bool
+	Visible bool
+	IsOpen  bool
 }

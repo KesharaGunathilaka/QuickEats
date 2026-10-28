@@ -46,6 +46,7 @@ class _ShellScreenState extends State<ShellScreen> {
           ),
           const NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long, color: AppColors.primary), label: 'Orders'),
           const NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet, color: AppColors.primary), label: 'Wallet'),
+          const NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings, color: AppColors.primary), label: 'Settings'),
         ],
       ),
     );
@@ -56,10 +57,11 @@ class _ShellScreenState extends State<ShellScreen> {
     if (loc.startsWith('/cart') || loc.startsWith('/checkout')) return 1;
     if (loc.startsWith('/orders')) return 2;
     if (loc.startsWith('/wallet')) return 3;
+    if (loc.startsWith('/settings')) return 4;
     return 0;
   }
 
   void _tap(BuildContext context, int i) {
-    switch (i) { case 0: context.go('/shops'); case 1: context.go('/cart'); case 2: context.go('/orders'); case 3: context.go('/wallet'); }
+    switch (i) { case 0: context.go('/shops'); case 1: context.go('/cart'); case 2: context.go('/orders'); case 3: context.go('/wallet'); case 4: context.go('/settings'); }
   }
 }

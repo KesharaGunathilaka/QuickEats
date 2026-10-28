@@ -67,7 +67,7 @@ func main() {
 	go relay.Start(context.Background())
 
 	// HTTP
-	handler := httpAdapter.NewOrderHandler(placeOrderUC, orderStatusUC, orderRepo)
+	handler := httpAdapter.NewOrderHandler(placeOrderUC, orderStatusUC, orderRepo, catalogClient)
 	router := httpAdapter.NewRouter(handler, cfg.JWTSecret)
 
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Port), Handler: router, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second}

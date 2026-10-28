@@ -4,6 +4,8 @@ import 'package:quickeats_shop/core/network/ws_client.dart';
 import 'package:quickeats_shop/services/auth_service.dart';
 import 'package:quickeats_shop/services/order_service.dart';
 import 'package:quickeats_shop/services/menu_service.dart';
+import 'package:quickeats_shop/services/account_service.dart';
+import 'package:quickeats_shop/viewmodels/settings_viewmodel.dart';
 import 'package:quickeats_shop/viewmodels/auth_viewmodel.dart';
 import 'package:quickeats_shop/viewmodels/order_queue_viewmodel.dart';
 import 'package:quickeats_shop/viewmodels/menu_viewmodel.dart';
@@ -27,6 +29,7 @@ Future<void> setupServiceLocator() async {
   // ── Services (stateless, singleton is fine) ──
   getIt.registerSingleton<OrderService>(OrderService(apiClient: getIt<ApiClient>()));
   getIt.registerSingleton<MenuService>(MenuService(apiClient: getIt<ApiClient>()));
+  getIt.registerSingleton<AccountService>(AccountService(apiClient: getIt<ApiClient>()));
 
   // ── ViewModels (factories — new instance each time, disposed with the widget) ──
   getIt.registerFactory<AuthViewModel>(() => AuthViewModel(authService: getIt<AuthService>()));
@@ -41,4 +44,6 @@ Future<void> setupServiceLocator() async {
     menuService: getIt<MenuService>(),
     authService: getIt<AuthService>(),
   ));
+
+  getIt.registerFactory<SettingsViewModel>(() => SettingsViewModel(accountService: getIt<AccountService>()));
 }

@@ -35,6 +35,13 @@ VALUES
    'Library Cafe', 'Coffee, tea and snacks', true, '22222222-2222-2222-2222-000000000002')
 ON CONFLICT DO NOTHING;
 
+-- Customers only see shops linked to their organisation
+INSERT INTO shop_organisations (shop_id, organisation_id)
+VALUES
+  ('33333333-3333-3333-3333-000000000001', '11111111-1111-1111-1111-111111111111'),
+  ('33333333-3333-3333-3333-000000000002', '11111111-1111-1111-1111-111111111111')
+ON CONFLICT DO NOTHING;
+
 -- Prices are in cents (LKR)
 INSERT INTO menu_items (id, shop_id, name, description, price, category, stock, available)
 VALUES

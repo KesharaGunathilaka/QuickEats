@@ -8,14 +8,17 @@ type RegisterRequest struct {
 	InviteCode       string `json:"inviteCode,omitempty"`
 }
 
+// RegisterShopRequest signs up a merchant. organisationSlugs lists every organisation
+// the shop serves; the older single organisationSlug is still accepted.
 type RegisterShopRequest struct {
-	OrganisationSlug string `json:"organisationSlug"`
-	Email            string `json:"email"`
-	Password         string `json:"password"`
-	DisplayName      string `json:"displayName"`
-	InviteCode       string `json:"inviteCode,omitempty"`
-	ShopName         string `json:"shopName"`
-	ShopDescription  string `json:"shopDescription"`
+	OrganisationSlug  string   `json:"organisationSlug,omitempty"`
+	OrganisationSlugs []string `json:"organisationSlugs,omitempty"`
+	Email             string   `json:"email"`
+	Password          string   `json:"password"`
+	DisplayName       string   `json:"displayName"`
+	InviteCode        string   `json:"inviteCode,omitempty"`
+	ShopName          string   `json:"shopName"`
+	ShopDescription   string   `json:"shopDescription"`
 }
 
 type LoginRequest struct {
@@ -27,9 +30,22 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-type CreateOrgRequest struct {
-	Name         string                 `json:"name"`
-	Slug         string                 `json:"slug"`
-	VerifyMethod string                 `json:"verifyMethod"`
-	VerifyConfig map[string]interface{} `json:"verifyConfig"`
+// OrgRequest creates or edits an organisation from the admin dashboard.
+type OrgRequest struct {
+	Name         string   `json:"name"`
+	Slug         string   `json:"slug"`
+	EmailDomains []string `json:"emailDomains"`
+}
+
+type UpdateProfileRequest struct {
+	DisplayName string `json:"displayName"`
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+type ShopOrganisationsRequest struct {
+	OrganisationSlugs []string `json:"organisationSlugs"`
 }
