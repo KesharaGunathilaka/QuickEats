@@ -12,4 +12,6 @@ type MenuItemRepository interface {
 	Update(ctx context.Context, item *domain.MenuItem) error
 	Delete(ctx context.Context, id string) error
 	UpdateStock(ctx context.Context, id string, stock int) error
+	// HeldQuantity is the quantity of an item reserved by orders still awaiting payment.
+	HeldQuantity(ctx context.Context, id string) (int, error)
 }

@@ -12,7 +12,7 @@ class OrderStatusScreen extends StatefulWidget {
 }
 
 class _OrderStatusScreenState extends State<OrderStatusScreen> {
-  @override void initState() { super.initState(); context.read<OrderViewModel>().trackOrder(widget.orderId); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<OrderViewModel>().trackOrder(widget.orderId); }); }
   @override void dispose() { context.read<OrderViewModel>().stopPolling(); super.dispose(); }
 
   @override Widget build(BuildContext context) {

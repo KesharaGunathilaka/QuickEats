@@ -12,7 +12,7 @@ class MenuScreen extends StatefulWidget {
 }
 
 class _MenuScreenState extends State<MenuScreen> {
-  @override void initState() { super.initState(); context.read<ShopsViewModel>().selectShop(widget.shopId); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<ShopsViewModel>().selectShop(widget.shopId); }); }
 
   @override Widget build(BuildContext context) {
     final cart = context.watch<CartViewModel>();

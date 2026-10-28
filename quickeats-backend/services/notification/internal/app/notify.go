@@ -54,6 +54,20 @@ func statusMessage(data orderEventData, newStatus string) domain.WSMessage {
 	return domain.WSMessage{Type: string(domain.TypeOrderStatus), Data: msg}
 }
 
+// HandleOrderPlaced tells the customer their order was received. The shop is told only
+// once payment succeeds (HandleOrderConfirmed), so unpaid orders never reach its queue.
+func (s *NotificationService) HandleOrderPlaced(ctx context.Context, event events.Event) error {
+	data, err := decodeOrderEvent(event)
+	if err != nil {
+		return err
+	}
+
+	s.hub.SendToCustomer(data.CustomerID, statusMessage(data, "PENDING_PAYMENT"))
+
+	slog.Info("notification: order placed", "customer_id", data.CustomerID, "order_id", data.OrderID)
+	return nil
+}
+
 // HandleOrderConfirmed tells the shop about a new paid order and the customer that it is confirmed.
 func (s *NotificationService) HandleOrderConfirmed(ctx context.Context, event events.Event) error {
 	data, err := decodeOrderEvent(event)

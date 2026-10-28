@@ -24,3 +24,20 @@ func (c *Checker) Check(ctx context.Context, key string, ttl time.Duration) (boo
 	}
 	return set, nil
 }
+
+// IsProcessed reports whether a consumer already handled an event (see events.Deduplicate).
+func (c *Checker) IsProcessed(ctx context.Context, key string) (bool, error) {
+	n, err := c.rdb.Exists(ctx, fmt.Sprintf("processed:%s", key)).Result()
+	if err != nil {
+		return false, fmt.Errorf("processed check: %w", err)
+	}
+	return n > 0, nil
+}
+
+// MarkProcessed records that a consumer handled an event.
+func (c *Checker) MarkProcessed(ctx context.Context, key string, ttl time.Duration) error {
+	if err := c.rdb.Set(ctx, fmt.Sprintf("processed:%s", key), "1", ttl).Err(); err != nil {
+		return fmt.Errorf("mark processed: %w", err)
+	}
+	return nil
+}

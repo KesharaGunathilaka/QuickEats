@@ -30,7 +30,8 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
         behavior: SnackBarBehavior.floating,
       ));
     });
-    _vm.init();
+    // After the first frame: loading notifies listeners, which must not happen mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _vm.init(); });
   }
 
   @override
@@ -56,6 +57,25 @@ class _OrderQueueScreenState extends State<OrderQueueScreen> {
         builder: (context, vm, _) {
           if (vm.isLoading && vm.allOrders.isEmpty) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (vm.error != null && vm.allOrders.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.wifi_off, size: 56, color: AppColors.textMuted),
+                    const SizedBox(height: 12),
+                    Text("Couldn't load orders", style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text('Check your internet connection and try again.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(onPressed: vm.loadOrders, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+                  ],
+                ),
+              ),
+            );
           }
           return Column(
             children: [

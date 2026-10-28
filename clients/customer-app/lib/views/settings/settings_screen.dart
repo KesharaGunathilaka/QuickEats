@@ -14,7 +14,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  @override void initState() { super.initState(); context.read<SettingsViewModel>().load(); }
+  @override void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.read<SettingsViewModel>().load(); }); }
 
   void _toast(String text, {bool error = false}) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text(text), backgroundColor: error ? AppColors.error : null, behavior: SnackBarBehavior.floating));

@@ -1,12 +1,15 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 
 class ApiConstants {
-  // Local dev default: web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
+  // Release builds default to the deployed API so a plain `flutter build apk` works on real phones.
+  // Debug default: web runs on the host itself; the Android emulator reaches the host via 10.0.2.2.
   // Point at the deployed API without editing code:
   //   flutter run --dart-define=API_BASE_URL=http://13.63.249.122
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
+    defaultValue: kReleaseMode
+        ? 'http://13.63.249.122'
+        : kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
   );
   // Live order updates come over a WebSocket through the same Kong gateway.
   static final String wsUrl = '${baseUrl.replaceFirst('http', 'ws')}/ws';

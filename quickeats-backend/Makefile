@@ -38,7 +38,9 @@ migrate-all:
 
 seed-dev:
 	@echo "Seeding dev data..."
-	psql "$$IDENTITY_DB_URL" -f infra/seed-dev.sql
+	psql "$$IDENTITY_DB_URL" -v ON_ERROR_STOP=1 -f infra/seed/identity.sql
+	psql "$$CATALOG_DB_URL" -v ON_ERROR_STOP=1 -f infra/seed/catalog.sql
+	psql "$$PAYMENT_DB_URL" -v ON_ERROR_STOP=1 -f infra/seed/payment.sql
 
 run-identity:
 	cd services/identity && go run ./cmd/server

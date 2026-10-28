@@ -182,7 +182,7 @@ func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In production: also trigger refund + stock release via events
+	// Cancel also releases the reserved stock. In production: also trigger a refund via events
 	if err := h.orderStatusUC.Cancel(r.Context(), order, "cancelled_by_customer"); err != nil {
 		httputil.RespondError(w, err)
 		return

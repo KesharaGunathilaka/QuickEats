@@ -8,7 +8,11 @@ import 'package:quickeats_shop/models/user.dart';
 
 class AuthService extends ChangeNotifier {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  final Dio _rawDio = Dio(BaseOptions(baseUrl: ApiConstants.baseUrl));
+  final Dio _rawDio = Dio(BaseOptions(
+    baseUrl: ApiConstants.baseUrl,
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+  ));
 
   String? _accessToken;
   String? _refreshTokenStr;

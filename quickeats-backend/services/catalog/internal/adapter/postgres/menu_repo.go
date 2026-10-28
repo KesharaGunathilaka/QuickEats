@@ -61,6 +61,14 @@ func (r *MenuItemRepo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+func (r *MenuItemRepo) HeldQuantity(ctx context.Context, id string) (int, error) {
+	var held int
+	err := r.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(quantity), 0) FROM stock_reservations WHERE menu_item_id=$1 AND status='HELD'`, id,
+	).Scan(&held)
+	return held, err
+}
+
 func (r *MenuItemRepo) UpdateStock(ctx context.Context, id string, stock int) error {
 	_, err := r.db.Exec(ctx, `UPDATE menu_items SET stock=$1, available=$2, updated_at=now() WHERE id=$3`, stock, stock > 0, id)
 	return err
