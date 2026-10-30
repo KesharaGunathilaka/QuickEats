@@ -63,21 +63,22 @@ func (i *Issuer) Issue(user *domain.User) (*port.TokenPair, error) {
 	}, nil
 }
 
-func (i *Issuer) ValidateRefreshToken(tokenStr string) (string, error) {
+func (i *Issuer) ValidateRefreshToken(tokenStr string) (string, time.Time, error) {
 	token, err := jwtlib.Parse(tokenStr, func(t *jwtlib.Token) (interface{}, error) {
 		return i.secret, nil
 	})
 	if err != nil || !token.Valid {
-		return "", fmt.Errorf("invalid refresh token")
+		return "", time.Time{}, fmt.Errorf("invalid refresh token")
 	}
 	claims, ok := token.Claims.(jwtlib.MapClaims)
 	if !ok {
-		return "", fmt.Errorf("invalid claims")
+		return "", time.Time{}, fmt.Errorf("invalid claims")
 	}
 	tokenType, _ := claims["type"].(string)
 	if tokenType != "refresh" {
-		return "", fmt.Errorf("not a refresh token")
+		return "", time.Time{}, fmt.Errorf("not a refresh token")
 	}
 	userID, _ := claims["sub"].(string)
-	return userID, nil
+	iat, _ := claims["iat"].(float64)
+	return userID, time.Unix(int64(iat), 0), nil
 }

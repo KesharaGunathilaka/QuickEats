@@ -14,4 +14,7 @@ type UserRepository interface {
 	UpdateDisplayName(ctx context.Context, id, displayName string) error
 	UpdatePasswordHash(ctx context.Context, id, hash string) error
 	UpdateOrganisation(ctx context.Context, id, orgID string) error
+	// InvalidateTokens revokes every refresh token issued so far for this user
+	// (password change, logout): the next /auth/refresh with an older token fails.
+	InvalidateTokens(ctx context.Context, id string) error
 }

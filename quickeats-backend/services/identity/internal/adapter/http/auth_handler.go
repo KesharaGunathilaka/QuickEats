@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/quickeats/pkg/httputil"
+	"github.com/quickeats/pkg/middleware"
 	"github.com/quickeats/services/identity/internal/app"
 	"github.com/quickeats/services/identity/internal/domain"
 	"github.com/quickeats/services/identity/internal/port"
@@ -123,7 +124,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.tokenIssuer.ValidateRefreshToken(req.RefreshToken)
+	userID, issuedAt, err := h.tokenIssuer.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
 		httputil.RespondError(w, httputil.ErrUnauthenticated("invalid refresh token"))
 		return
@@ -134,6 +135,12 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		httputil.RespondError(w, httputil.ErrUnauthenticated("user not found"))
 		return
 	}
+	// tokens_invalid_before defaults to the Unix epoch (see userColumns' COALESCE),
+	// so this is only true once a password change or logout has actually revoked a session.
+	if issuedAt.Before(user.TokensInvalidBefore) {
+		httputil.RespondError(w, httputil.ErrUnauthenticated("session revoked, please log in again"))
+		return
+	}
 
 	tokens, err := h.tokenIssuer.Issue(user)
 	if err != nil {
@@ -142,4 +149,16 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, tokens)
+}
+
+// Logout revokes every refresh token issued to this user so far. The access
+// token already handed out keeps working until it naturally expires (short-lived
+// by design), but no refresh token - old or new - can mint another one after this.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if err := h.userRepo.InvalidateTokens(r.Context(), claims.UserID); err != nil {
+		httputil.RespondError(w, err)
+		return
+	}
+	httputil.RespondNoContent(w)
 }

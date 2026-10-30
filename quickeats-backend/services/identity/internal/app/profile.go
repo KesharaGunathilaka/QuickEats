@@ -101,7 +101,12 @@ func (uc *ProfileUseCase) ChangePassword(ctx context.Context, userID, current, n
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	return uc.userRepo.UpdatePasswordHash(ctx, userID, string(hash))
+	if err := uc.userRepo.UpdatePasswordHash(ctx, userID, string(hash)); err != nil {
+		return err
+	}
+	// Changing the password revokes every other session: nobody who had the old
+	// password, including the user on another device, can mint a new access token.
+	return uc.userRepo.InvalidateTokens(ctx, userID)
 }
 
 // SetShopOrganisations replaces the organisation codes a merchant's shop serves.

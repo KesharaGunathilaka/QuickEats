@@ -113,12 +113,18 @@ func (h *CatalogHandler) ListMenu(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CatalogHandler) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	shopID := chi.URLParam(r, "id")
+	if claims.Role != "admin" && claims.ShopID != shopID {
+		httputil.RespondError(w, httputil.ErrForbidden("you can only manage your own shop's menu"))
+		return
+	}
 	var req CreateMenuItemRequest
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}
-	item, err := h.menuUC.CreateItem(r.Context(), chi.URLParam(r, "id"), req.Name, req.Description, req.Price, req.Category, req.Stock)
+	item, err := h.menuUC.CreateItem(r.Context(), shopID, req.Name, req.Description, req.Price, req.Category, req.Stock)
 	if err != nil {
 		httputil.RespondError(w, err)
 		return
@@ -127,12 +133,19 @@ func (h *CatalogHandler) CreateMenuItem(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *CatalogHandler) UpdateStock(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	itemID := chi.URLParam(r, "itemId")
+	item, err := h.menuUC.GetItem(r.Context(), itemID)
+	if err != nil || item == nil || (claims.Role != "admin" && claims.ShopID != item.ShopID) {
+		httputil.RespondError(w, httputil.ErrNotFound("menu item"))
+		return
+	}
 	var req UpdateStockRequest
 	if err := httputil.DecodeJSON(r, &req); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}
-	if err := h.menuUC.UpdateStock(r.Context(), chi.URLParam(r, "itemId"), req.Stock); err != nil {
+	if err := h.menuUC.UpdateStock(r.Context(), itemID, req.Stock); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}
@@ -282,7 +295,14 @@ func (h *CatalogHandler) ShopVisibleInternal(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *CatalogHandler) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
-	if err := h.menuUC.DeleteItem(r.Context(), chi.URLParam(r, "itemId")); err != nil {
+	claims := middleware.GetClaims(r.Context())
+	itemID := chi.URLParam(r, "itemId")
+	item, err := h.menuUC.GetItem(r.Context(), itemID)
+	if err != nil || item == nil || (claims.Role != "admin" && claims.ShopID != item.ShopID) {
+		httputil.RespondError(w, httputil.ErrNotFound("menu item"))
+		return
+	}
+	if err := h.menuUC.DeleteItem(r.Context(), itemID); err != nil {
 		httputil.RespondError(w, err)
 		return
 	}

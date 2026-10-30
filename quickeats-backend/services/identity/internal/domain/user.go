@@ -25,6 +25,9 @@ type User struct {
 	ShopID         *string   `json:"shopId,omitempty"`
 	Verified       bool      `json:"verified"`
 	CreatedAt      time.Time `json:"createdAt"`
+	// TokensInvalidBefore: refresh tokens issued before this time are rejected.
+	// Zero means no sessions have been revoked. Set on password change and logout.
+	TokensInvalidBefore time.Time `json:"-"`
 }
 
 func NewUser(orgID, email, passwordHash, displayName string, role Role) *User {

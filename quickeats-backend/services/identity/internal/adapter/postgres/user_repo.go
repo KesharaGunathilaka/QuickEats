@@ -19,7 +19,7 @@ func NewUserRepo(db *pgxpool.Pool) *UserRepo {
 }
 
 // Admins have no organisation: "" is stored as NULL and read back as "".
-const userColumns = `id, COALESCE(organisation_id::text, ''), email, password_hash, display_name, role, shop_id, verified, created_at`
+const userColumns = `id, COALESCE(organisation_id::text, ''), email, password_hash, display_name, role, shop_id, verified, created_at, COALESCE(tokens_invalid_before, 'epoch')`
 
 func (r *UserRepo) Create(ctx context.Context, user *domain.User) error {
 	_, err := r.db.Exec(ctx,
@@ -68,10 +68,15 @@ func (r *UserRepo) UpdateOrganisation(ctx context.Context, id, orgID string) err
 	return err
 }
 
+func (r *UserRepo) InvalidateTokens(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `UPDATE users SET tokens_invalid_before = now() WHERE id = $1`, id)
+	return err
+}
+
 func scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
 	err := row.Scan(&u.ID, &u.OrganisationID, &u.Email, &u.PasswordHash,
-		&u.DisplayName, &u.Role, &u.ShopID, &u.Verified, &u.CreatedAt)
+		&u.DisplayName, &u.Role, &u.ShopID, &u.Verified, &u.CreatedAt, &u.TokensInvalidBefore)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

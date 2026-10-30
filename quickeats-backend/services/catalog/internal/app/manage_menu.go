@@ -20,6 +20,11 @@ func (uc *ManageMenuUseCase) ListItems(ctx context.Context, shopID string) ([]*d
 	return uc.menuRepo.ListByShop(ctx, shopID)
 }
 
+// GetItem looks up a single item, e.g. to check which shop owns it before a mutation.
+func (uc *ManageMenuUseCase) GetItem(ctx context.Context, id string) (*domain.MenuItem, error) {
+	return uc.menuRepo.GetByID(ctx, id)
+}
+
 func (uc *ManageMenuUseCase) CreateItem(ctx context.Context, shopID, name, desc string, price int64, category string, stock int) (*domain.MenuItem, error) {
 	item := domain.NewMenuItem(shopID, name, desc, price, category, stock)
 	if err := uc.menuRepo.Create(ctx, item); err != nil {

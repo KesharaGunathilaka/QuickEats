@@ -27,6 +27,7 @@ func NewRouter(authHandler *AuthHandler, orgHandler *OrgHandler, profileHandler 
 		r.Post("/register-shop", authHandler.RegisterShop)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
+		r.With(middleware.Auth(jwtSecret)).Post("/logout", authHandler.Logout)
 	})
 
 	// Public: check an organisation code during sign-up

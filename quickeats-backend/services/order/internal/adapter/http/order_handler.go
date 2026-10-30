@@ -131,12 +131,22 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	order, err := h.orderRepo.GetByID(r.Context(), chi.URLParam(r, "id"))
-	if err != nil || order == nil {
+	if err != nil || order == nil || !canAccessOrder(claims, order) {
 		httputil.RespondError(w, httputil.ErrNotFound("order"))
 		return
 	}
 	httputil.RespondJSON(w, http.StatusOK, order)
+}
+
+// canAccessOrder reports whether the caller may view or act on this order: the
+// customer who placed it, staff/owner of the shop it belongs to, or an admin.
+func canAccessOrder(claims *middleware.UserClaims, order *domain.Order) bool {
+	if claims.Role == "admin" || claims.UserID == order.CustomerID {
+		return true
+	}
+	return claims.ShopID != "" && claims.ShopID == order.ShopID
 }
 
 func (h *OrderHandler) ListByCustomer(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +161,12 @@ func (h *OrderHandler) ListByCustomer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) ListByShop(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	shopID := chi.URLParam(r, "shopId")
+	if claims.Role != "admin" && claims.ShopID != shopID {
+		httputil.RespondError(w, httputil.ErrForbidden("you can only view your own shop's orders"))
+		return
+	}
 	params := httputil.ParsePagination(r)
 	orders, err := h.orderRepo.ListByShop(r.Context(), shopID, params.Limit, params.Cursor)
 	if err != nil {
@@ -162,6 +177,7 @@ func (h *OrderHandler) ListByShop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	id := chi.URLParam(r, "id")
 	var req UpdateStatusRequest
 	if err := httputil.DecodeJSON(r, &req); err != nil {
@@ -170,7 +186,7 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	order, err := h.orderRepo.GetByID(r.Context(), id)
-	if err != nil || order == nil {
+	if err != nil || order == nil || (claims.Role != "admin" && claims.ShopID != order.ShopID) {
 		httputil.RespondError(w, httputil.ErrNotFound("order"))
 		return
 	}
@@ -215,6 +231,7 @@ func (h *OrderHandler) CancelOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) RejectOrder(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	id := chi.URLParam(r, "id")
 	var req RejectRequest
 	if err := httputil.DecodeJSON(r, &req); err != nil {
@@ -223,7 +240,7 @@ func (h *OrderHandler) RejectOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	order, err := h.orderRepo.GetByID(r.Context(), id)
-	if err != nil || order == nil {
+	if err != nil || order == nil || (claims.Role != "admin" && claims.ShopID != order.ShopID) {
 		httputil.RespondError(w, httputil.ErrNotFound("order"))
 		return
 	}
